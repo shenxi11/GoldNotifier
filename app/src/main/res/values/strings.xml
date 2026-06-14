@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">黄金价格</string>
+    <string name="notification_panel_accessibility_label">GoldNotifier 通知栏刷新检测</string>
+    <string name="notification_panel_accessibility_description">检测通知栏是否展开，用于仅在下拉通知栏时刷新黄金价格。</string>
+</resources>
