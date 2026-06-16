@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.example.goldnotifier.data.local.UserSettingsDataStore
 import com.example.goldnotifier.domain.model.GoldPrice
 import com.example.goldnotifier.domain.model.GoldTrendPoint
+import com.example.goldnotifier.domain.trend.TrendChartMode
 import com.example.goldnotifier.domain.trend.TrendTimeRange
 import com.example.goldnotifier.ui.component.GoldPriceCard
 import com.example.goldnotifier.ui.component.GoldRealtimeTrendCard
@@ -56,6 +57,7 @@ fun HomeScreen(
     onNotificationEnabledChange: (Boolean) -> Unit,
     onRefreshIntervalChange: (Int) -> Unit,
     onTrendTimeRangeChange: (TrendTimeRange) -> Unit,
+    onTrendChartModeChange: (TrendChartMode) -> Unit,
     onRefresh: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -79,11 +81,22 @@ fun HomeScreen(
         GoldRealtimeTrendCard(
             points = uiState.trendPoints,
             pointCount = uiState.trendPointCount,
+            candles = uiState.trendCandles,
             selectedRange = uiState.selectedTrendRange,
+            chartMode = uiState.chartMode,
             unit = uiState.price?.unit ?: "元/克",
-            message = uiState.trendMessage,
-            isLoading = uiState.isTrendLoading,
+            message = if (uiState.chartMode == TrendChartMode.Candle) {
+                uiState.candleMessage
+            } else {
+                uiState.trendMessage
+            },
+            isLoading = if (uiState.chartMode == TrendChartMode.Candle) {
+                uiState.isCandleLoading
+            } else {
+                uiState.isTrendLoading
+            },
             onRangeSelected = onTrendTimeRangeChange,
+            onChartModeSelected = onTrendChartModeChange,
             modifier = Modifier.fillMaxWidth(),
         )
         ControlPanel(
@@ -353,6 +366,7 @@ private fun HomeScreenPreview() {
             onNotificationEnabledChange = {},
             onRefreshIntervalChange = {},
             onTrendTimeRangeChange = {},
+            onTrendChartModeChange = {},
             onRefresh = {},
             onOpenAccessibilitySettings = {},
         )

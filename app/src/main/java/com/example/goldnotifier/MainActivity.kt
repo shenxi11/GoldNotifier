@@ -164,6 +164,7 @@ private fun GoldNotifierApp(
         },
         onRefreshIntervalChange = viewModel::setRefreshIntervalSeconds,
         onTrendTimeRangeChange = viewModel::selectTrendTimeRange,
+        onTrendChartModeChange = viewModel::selectTrendChartMode,
         onRefresh = viewModel::refresh,
         onOpenAccessibilitySettings = {
             accessibilitySettingsLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

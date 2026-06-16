@@ -235,3 +235,59 @@
 - 本轮未提交 `server` 子仓库指针、`AGENTS.md` 或 `设计文档` 下的设计源文件。
 - `progress.md`：追加本次客户端仓库推送记录。
 - 回滚方式：执行 `git revert 22a03a1` 后重新推送；如同时回滚本记录，再回退本条进度日志提交。
+
+## 2026-06-16 - Task: 落地 TradingView K 线查看方案
+
+### What was done
+- 服务端新增 `/api/v1/gold/candles`，按 `5m/1h/6h/1d` 窗口统一聚合 OHLC K 线，不主动刷新上游。
+- 客户端新增 K 线数据链路和 `折线 / K线` 切换，默认保留原折线图，K 线使用 TradingView Lightweight Charts Android wrapper 渲染。
+- 前台刷新到新鲜最新价时，客户端只更新当前最后一根 K 线，避免每 3 秒全量重拉 K 线。
+- 同步补充服务端接口文档和客户端 TradingView K 线落地说明。
+
+### Testing
+- 服务端 `.\.venv\Scripts\python.exe -m pytest`：通过，34 passed，1 个 FastAPI/Starlette TestClient 依赖弃用警告。
+- 客户端 `.\gradlew.bat testDebugUnitTest`：通过。
+- 客户端 `.\gradlew.bat assembleDebug`：通过；`stripDebugDebugSymbols` 提示部分三方 native 库无法 strip，已按原样打包。
+- 根仓库 `git diff --check`：通过，仅提示 Windows 工作区换行转换警告。
+- 服务端子仓库 `git -C server diff --check`：通过，仅提示 Windows 工作区换行转换警告。
+
+### Notes
+- `server/model/gold_history.py`：新增 `GoldCandleBar` 与 `GoldCandlesResponse` 响应模型。
+- `server/service/gold_service.py`：新增 candles 查询、窗口到聚合粒度映射和 OHLC 聚合逻辑。
+- `server/api/gold_history_api.py`：新增 `/api/v1/gold/candles` 路由。
+- `server/tests/test_api_contract.py`、`server/tests/test_gold_service.py`：补充 K 线 API 契约和聚合规则测试。
+- `server/docs/gold_history_api.md`：补充 candles 接口、响应结构和聚合口径。
+- `gradle/libs.versions.toml`、`app/build.gradle.kts`：新增 `com.tradingview:lightweightcharts:4.0.0` 依赖。
+- `app/src/main/java/com/example/goldnotifier/data/api/GoldApi.kt`、`app/src/main/java/com/example/goldnotifier/data/model/GoldHistoryDto.kt`、`app/src/main/java/com/example/goldnotifier/data/repository/GoldRepository.kt`：新增 candles API、DTO 映射和仓库方法。
+- `app/src/main/java/com/example/goldnotifier/domain/model/GoldCandle.kt`、`app/src/main/java/com/example/goldnotifier/domain/trend/TrendChartMode.kt`、`app/src/main/java/com/example/goldnotifier/domain/trend/TrendTimeRange.kt`：新增 K 线领域模型、图表模式和周期映射。
+- `app/src/main/java/com/example/goldnotifier/ui/screen/HomeViewModel.kt`、`app/src/main/java/com/example/goldnotifier/ui/screen/HomeScreen.kt`、`app/src/main/java/com/example/goldnotifier/MainActivity.kt`：接入 K 线状态、模式切换和刷新更新逻辑。
+- `app/src/main/java/com/example/goldnotifier/ui/component/GoldRealtimeTrendCard.kt`、`app/src/main/java/com/example/goldnotifier/ui/component/TradingViewKLineChart.kt`：新增折线/K 线切换和 TradingView K 线渲染。
+- `app/src/test/java/com/example/goldnotifier/data/repository/GoldRepositoryTest.kt`：补充客户端 candles 数据链路测试。
+- `docs/gold-tradingview-kline-v1.md`：新增客户端 K 线落地说明。
+- `progress.md`：追加本次 TradingView K 线落地记录。
+- 回滚方式：客户端回退上述 app、gradle、docs、progress 文件；服务端在 `server` 子仓库回退上述 API、service、model、tests、docs 文件。若已提交，可分别在根仓库和 `server` 子仓库执行对应提交的 `git revert`。
+
+## 2026-06-16 - Task: 提交并部署 TradingView K 线服务端
+
+### What was done
+- 将服务端 `/api/v1/gold/candles` 改动提交并推送到 GitHub。
+- 服务器 `/opt/gold-notifier/server` 拉取服务端提交 `d518a9f`，重建并重启 `gold-api` 容器。
+- 公网验证 health、latest 和 `5m/1h/6h/1d` 四个 K 线窗口均可访问。
+
+### Testing
+- 服务端提交前 `.\.venv\Scripts\python.exe -m pytest`：通过，34 passed，1 个 FastAPI/Starlette TestClient 依赖弃用警告。
+- 服务端提交前 `git diff --cached --check`：通过，仅提示 Windows 工作区换行转换警告。
+- 服务器 `docker compose ps`：`gold-api` 与 `gold-redis` 均为 Up。
+- 公网 `/api/v1/health`：`ok=true`、`redis.ok=true`、`sourceStatus.ok=true`。
+- 公网 `/api/v1/gold/latest?symbol=XAU`：返回 `code=0`、`source=finnhub`、`isStale=false`。
+- 公网 `/api/v1/gold/candles?symbol=XAU&range=5m`：返回 `code=0`、`resolution=15s`、`count=21`。
+- 公网 `/api/v1/gold/candles?symbol=XAU&range=1h`：返回 `code=0`、`resolution=1m`、`count=61`。
+- 公网 `/api/v1/gold/candles?symbol=XAU&range=6h`：返回 `code=0`、`resolution=5m`、`count=67`。
+- 公网 `/api/v1/gold/candles?symbol=XAU&range=1d`：返回 `code=0`、`resolution=15m`、`count=45`。
+
+### Notes
+- 服务端提交 `d518a9f add gold candle history api`：新增 K 线接口、聚合逻辑、测试和接口文档。
+- 远端容器已运行提交 `d518a9f`。
+- 服务器部署目录仍存在未跟踪备份文件 `.env.backup.20260615143830`，本轮未修改。
+- `progress.md`：追加本次服务端提交和部署记录。
+- 回滚方式：在服务器 `/opt/gold-notifier/server` 执行 `git checkout 94bc4a1` 后 `docker compose up -d --build gold-api`；或在 GitHub 回退 `d518a9f` 后重新部署。

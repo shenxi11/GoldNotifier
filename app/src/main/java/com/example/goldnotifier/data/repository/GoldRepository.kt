@@ -3,9 +3,11 @@ package com.example.goldnotifier.data.repository
 import com.example.goldnotifier.data.api.GoldApi
 import com.example.goldnotifier.data.local.GoldLocalStore
 import com.example.goldnotifier.data.local.UserSettingsDataStore
+import com.example.goldnotifier.data.model.GoldCandleBarDto
 import com.example.goldnotifier.data.model.GoldHistoryPointDto
 import com.example.goldnotifier.data.model.toDomain
 import com.example.goldnotifier.data.model.toDomainOrNull
+import com.example.goldnotifier.domain.model.GoldCandle
 import com.example.goldnotifier.domain.model.GoldPrice
 import com.example.goldnotifier.domain.model.GoldTrendPoint
 import com.example.goldnotifier.domain.model.GoldTrendSnapshot
@@ -24,7 +26,7 @@ import java.util.concurrent.TimeUnit
 /*
 模块名: GoldRepository
 功能概述: 协调服务端接口、本地缓存和用户设置，提供客户端单一数据入口。
-对外接口: cachedGoldPrice、refreshGoldPrice、fetchTrendHistory、setNotificationEnabled、setRefreshIntervalSeconds
+对外接口: cachedGoldPrice、refreshGoldPrice、fetchTrendHistory、fetchTrendCandles、setNotificationEnabled、setRefreshIntervalSeconds
 依赖关系: GoldApi、GoldLocalStore
 输入输出: 输入网络响应和用户设置，输出 UI/通知可消费的 GoldRefreshResult。
 异常与错误: 网络或解析失败时优先返回本地缓存，并附带延迟提示。
@@ -100,6 +102,33 @@ class GoldRepository(
             GoldTrendHistoryResult(
                 points = emptyList(),
                 message = error.message?.takeIf { it.isNotBlank() } ?: "历史趋势获取失败",
+            )
+        }
+    }
+
+    suspend fun fetchTrendCandles(
+        symbol: String = "XAU",
+        range: TrendTimeRange,
+    ): GoldCandlesResult {
+        return runCatching {
+            val response = api.getGoldCandles(
+                symbol = symbol,
+                range = range.serverRange,
+            )
+            if (response.code != 0) {
+                error(response.message.ifBlank { "服务端返回错误码 ${response.code}" })
+            }
+            val candles = response.data
+                ?.bars
+                .orEmpty()
+                .mapNotNull(GoldCandleBarDto::toDomainOrNull)
+                .distinctBy { candle -> candle.timestampMillis }
+                .sortedBy { candle -> candle.timestampMillis }
+            GoldCandlesResult(candles = candles, message = null)
+        }.getOrElse { error ->
+            GoldCandlesResult(
+                candles = emptyList(),
+                message = error.message?.takeIf { it.isNotBlank() } ?: "K线数据获取失败",
             )
         }
     }
@@ -217,6 +246,11 @@ data class GoldRefreshResult(
 
 data class GoldTrendHistoryResult(
     val points: List<GoldTrendPoint>,
+    val message: String?,
+)
+
+data class GoldCandlesResult(
+    val candles: List<GoldCandle>,
     val message: String?,
 )
 

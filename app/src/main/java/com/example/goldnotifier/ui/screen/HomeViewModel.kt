@@ -5,10 +5,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.goldnotifier.data.local.UserSettingsDataStore
 import com.example.goldnotifier.data.repository.GoldRepository
+import com.example.goldnotifier.domain.model.GoldCandle
 import com.example.goldnotifier.domain.model.GoldPrice
 import com.example.goldnotifier.domain.model.GoldTrendPoint
 import com.example.goldnotifier.domain.model.GoldTrendSnapshot
 import com.example.goldnotifier.domain.trend.AppendResult
+import com.example.goldnotifier.domain.trend.TrendChartMode
 import com.example.goldnotifier.domain.trend.TrendPointSampler
 import com.example.goldnotifier.domain.trend.TrendPointBuffer
 import com.example.goldnotifier.domain.trend.TrendTimeRange
@@ -42,7 +44,9 @@ class HomeViewModel(
     private val refreshUiMutex = Mutex()
     private val trendBuffer = TrendPointBuffer()
     private var loadedTrendHistoryPoints: List<GoldTrendPoint> = emptyList()
+    private var loadedTrendCandles: List<GoldCandle> = emptyList()
     private var trendHistoryJob: Job? = null
+    private var trendCandleJob: Job? = null
 
     @Volatile
     private var lastTrendSnapshotSavedAtMillis: Long = 0L
@@ -79,9 +83,29 @@ class HomeViewModel(
                 trendPoints = display.points,
                 trendPointCount = display.totalCount,
                 trendMessage = null,
+                trendCandles = emptyList(),
+                candleMessage = null,
             )
         }
+        loadedTrendCandles = emptyList()
         loadTrendHistory(range)
+        if (_uiState.value.chartMode == TrendChartMode.Candle) {
+            loadTrendCandles(range)
+        }
+    }
+
+    fun selectTrendChartMode(mode: TrendChartMode) {
+        val current = _uiState.value
+        if (current.chartMode == mode) return
+        _uiState.update { state ->
+            state.copy(
+                chartMode = mode,
+                candleMessage = null,
+            )
+        }
+        if (mode == TrendChartMode.Candle && loadedTrendCandles.isEmpty()) {
+            loadTrendCandles(current.selectedTrendRange)
+        }
     }
 
     fun saveTrendSnapshot(force: Boolean = false) {
@@ -130,6 +154,7 @@ class HomeViewModel(
                 fromCache = result.fromCache,
             )
             appendLatestPointToLoadedHistory(appendResult)
+            updateLatestCandle(result.price, result.fromCache)
             val display = trendDisplay(_uiState.value.selectedTrendRange)
             _uiState.update { state ->
                 state.copy(
@@ -166,6 +191,30 @@ class HomeViewModel(
                     trendPointCount = display.totalCount,
                     trendMessage = result.message,
                     isTrendLoading = false,
+                )
+            }
+        }
+    }
+
+    private fun loadTrendCandles(range: TrendTimeRange) {
+        trendCandleJob?.cancel()
+        trendCandleJob = viewModelScope.launch {
+            _uiState.update { state ->
+                if (state.selectedTrendRange == range && state.chartMode == TrendChartMode.Candle) {
+                    state.copy(isCandleLoading = true)
+                } else {
+                    state
+                }
+            }
+            val result = repository.fetchTrendCandles(range = range)
+            if (_uiState.value.selectedTrendRange != range) return@launch
+
+            loadedTrendCandles = result.candles
+            _uiState.update { state ->
+                state.copy(
+                    trendCandles = loadedTrendCandles,
+                    candleMessage = result.message,
+                    isCandleLoading = false,
                 )
             }
         }
@@ -229,6 +278,35 @@ class HomeViewModel(
         )
     }
 
+    private fun updateLatestCandle(
+        price: GoldPrice?,
+        fromCache: Boolean,
+    ) {
+        if (_uiState.value.chartMode != TrendChartMode.Candle) return
+        if (price == null || fromCache || price.isStale || price.source.equals("cache", ignoreCase = true)) return
+        if (price.price <= 0.0) return
+        val range = _uiState.value.selectedTrendRange
+        val timestampMillis = wallClockMillis()
+        val bucketStart = timestampMillis - timestampMillis % range.candleBucketMillis
+        val candles = loadedTrendCandles.toMutableList()
+        val last = candles.lastOrNull()
+        when {
+            last == null -> candles += price.toCandle(bucketStart)
+            last.timestampMillis == bucketStart -> {
+                candles[candles.lastIndex] = last.copy(
+                    high = maxOf(last.high, price.price),
+                    low = minOf(last.low, price.price),
+                    close = price.price,
+                )
+            }
+            last.timestampMillis < bucketStart -> candles += price.toCandle(bucketStart)
+            else -> return
+        }
+        val startMillis = timestampMillis - range.windowMillis
+        loadedTrendCandles = candles.filter { candle -> candle.timestampMillis >= startMillis }
+        _uiState.update { state -> state.copy(trendCandles = loadedTrendCandles) }
+    }
+
     private fun trendDisplay(range: TrendTimeRange): TrendDisplay {
         val mergedPoints = mergeTrendPoints(
             points = loadedTrendHistoryPoints + trendBuffer.snapshot(range.windowMillis),
@@ -282,10 +360,14 @@ class HomeViewModel(
 data class HomeUiState(
     val price: GoldPrice? = null,
     val selectedTrendRange: TrendTimeRange = TrendTimeRange.FiveMinutes,
+    val chartMode: TrendChartMode = TrendChartMode.Line,
     val trendPoints: List<GoldTrendPoint> = emptyList(),
     val trendPointCount: Int = 0,
+    val trendCandles: List<GoldCandle> = emptyList(),
     val trendMessage: String? = null,
+    val candleMessage: String? = null,
     val isTrendLoading: Boolean = false,
+    val isCandleLoading: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val notificationEnabled: Boolean = false,
@@ -296,3 +378,12 @@ private data class TrendDisplay(
     val points: List<GoldTrendPoint>,
     val totalCount: Int,
 )
+
+private fun GoldPrice.toCandle(timestampMillis: Long): GoldCandle =
+    GoldCandle(
+        timestampMillis = timestampMillis,
+        open = price,
+        high = price,
+        low = price,
+        close = price,
+    )

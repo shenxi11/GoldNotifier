@@ -13,26 +13,36 @@ enum class TrendTimeRange(
     val label: String,
     val windowMillis: Long,
     val startLabel: String,
+    val serverRange: String,
+    val candleBucketMillis: Long,
 ) {
     FiveMinutes(
         label = "5 分钟",
         windowMillis = 5 * 60 * 1000L,
         startLabel = "5 分钟前",
+        serverRange = "5m",
+        candleBucketMillis = 15 * 1000L,
     ),
     OneHour(
         label = "1 小时",
         windowMillis = 60 * 60 * 1000L,
         startLabel = "1 小时前",
+        serverRange = "1h",
+        candleBucketMillis = 60 * 1000L,
     ),
     SixHours(
         label = "6 小时",
         windowMillis = 6 * 60 * 60 * 1000L,
         startLabel = "6 小时前",
+        serverRange = "6h",
+        candleBucketMillis = 5 * 60 * 1000L,
     ),
     OneDay(
         label = "1 天",
         windowMillis = 24 * 60 * 60 * 1000L,
         startLabel = "24 小时前",
+        serverRange = "1d",
+        candleBucketMillis = 15 * 60 * 1000L,
     );
 
     companion object {

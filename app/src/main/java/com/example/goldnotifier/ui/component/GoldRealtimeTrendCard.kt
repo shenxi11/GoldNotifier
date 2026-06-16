@@ -26,7 +26,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.goldnotifier.domain.model.GoldCandle
 import com.example.goldnotifier.domain.model.GoldTrendPoint
+import com.example.goldnotifier.domain.trend.TrendChartMode
 import com.example.goldnotifier.domain.trend.TrendTimeRange
 import com.example.goldnotifier.ui.theme.GoldNotifierTheme
 import java.util.Locale
@@ -45,11 +47,14 @@ import kotlin.math.abs
 fun GoldRealtimeTrendCard(
     points: List<GoldTrendPoint>,
     pointCount: Int,
+    candles: List<GoldCandle>,
     selectedRange: TrendTimeRange,
+    chartMode: TrendChartMode,
     unit: String,
     message: String?,
     isLoading: Boolean,
     onRangeSelected: (TrendTimeRange) -> Unit,
+    onChartModeSelected: (TrendChartMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val summary = remember(points) { points.toTrendSummary() }
@@ -89,17 +94,46 @@ fun GoldRealtimeTrendCard(
                 )
             }
 
-            if (points.size < MIN_CHART_POINTS) {
-                EmptyTrendContent(isLoading = isLoading)
-            } else {
-                GoldRealtimeTrendChart(
-                    points = points,
-                    lineColor = trendColor,
-                )
-                TrendFooter(
-                    pointCount = pointCount,
-                    selectedRange = selectedRange,
-                )
+            TrendChartModeSelector(
+                selectedMode = chartMode,
+                onModeSelected = onChartModeSelected,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            when (chartMode) {
+                TrendChartMode.Line -> {
+                    if (points.size < MIN_CHART_POINTS) {
+                        EmptyTrendContent(
+                            title = if (isLoading) "趋势加载中" else "趋势点采集中",
+                            detail = "至少 2 个有效刷新点后显示折线",
+                        )
+                    } else {
+                        GoldRealtimeTrendChart(
+                            points = points,
+                            lineColor = trendColor,
+                        )
+                        TrendFooter(
+                            pointCount = pointCount,
+                            selectedRange = selectedRange,
+                            unitLabel = "点",
+                        )
+                    }
+                }
+                TrendChartMode.Candle -> {
+                    if (candles.isEmpty()) {
+                        EmptyTrendContent(
+                            title = if (isLoading) "K线加载中" else "暂无K线",
+                            detail = "暂无足够行情生成K线",
+                        )
+                    } else {
+                        TradingViewKLineChart(candles = candles)
+                        TrendFooter(
+                            pointCount = candles.size,
+                            selectedRange = selectedRange,
+                            unitLabel = "根 · TradingView",
+                        )
+                    }
+                }
             }
 
             message?.takeIf { it.isNotBlank() }?.let { text ->
@@ -107,6 +141,41 @@ fun GoldRealtimeTrendCard(
                     text = text,
                     color = MarketTextSecondary,
                     style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrendChartModeSelector(
+    selectedMode: TrendChartMode,
+    onModeSelected: (TrendChartMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MarketControl)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        TrendChartMode.entries.forEach { mode ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (selectedMode == mode) MarketSelected else Color.Transparent)
+                    .clickable { onModeSelected(mode) }
+                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = mode.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (selectedMode == mode) MarketTextPrimary else MarketTextSecondary,
+                    fontWeight = if (selectedMode == mode) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
                 )
             }
         }
@@ -193,7 +262,10 @@ private fun TrendTimeRange.compactLabel(): String = when (this) {
 }
 
 @Composable
-private fun EmptyTrendContent(isLoading: Boolean) {
+private fun EmptyTrendContent(
+    title: String,
+    detail: String,
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -205,13 +277,13 @@ private fun EmptyTrendContent(isLoading: Boolean) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = if (isLoading) "趋势加载中" else "趋势点采集中",
+                text = title,
                 style = MaterialTheme.typography.titleSmall,
                 color = MarketTextPrimary,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "至少 2 个有效刷新点后显示折线",
+                text = detail,
                 style = MaterialTheme.typography.bodySmall,
                 color = MarketTextSecondary,
                 textAlign = TextAlign.Center,
@@ -224,6 +296,7 @@ private fun EmptyTrendContent(isLoading: Boolean) {
 private fun TrendFooter(
     pointCount: Int,
     selectedRange: TrendTimeRange,
+    unitLabel: String,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -235,7 +308,7 @@ private fun TrendFooter(
             color = MarketTextMuted,
         )
         Text(
-            text = "$pointCount 点 · 现在",
+            text = "$pointCount $unitLabel · 现在",
             style = MaterialTheme.typography.labelSmall,
             color = MarketTextMuted,
         )
@@ -308,11 +381,14 @@ private fun GoldRealtimeTrendCardPreview() {
                 GoldTrendPoint(baseTime + 12_000L, 884.18, "2026-06-15 17:00:12", "finnhub"),
             ),
             pointCount = 5,
+            candles = emptyList(),
             selectedRange = TrendTimeRange.FiveMinutes,
+            chartMode = TrendChartMode.Line,
             unit = "元/克",
             message = null,
             isLoading = false,
             onRangeSelected = {},
+            onChartModeSelected = {},
         )
     }
 }

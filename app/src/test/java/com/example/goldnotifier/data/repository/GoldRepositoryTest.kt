@@ -3,6 +3,8 @@ package com.example.goldnotifier.data.repository
 import com.example.goldnotifier.data.api.GoldApi
 import com.example.goldnotifier.data.local.GoldLocalStore
 import com.example.goldnotifier.data.model.ApiResponse
+import com.example.goldnotifier.data.model.GoldCandleBarDto
+import com.example.goldnotifier.data.model.GoldCandlesResponseDto
 import com.example.goldnotifier.data.model.GoldHistoryPointDto
 import com.example.goldnotifier.data.model.GoldHistoryResponseDto
 import com.example.goldnotifier.data.model.GoldPriceDto
@@ -273,14 +275,54 @@ class GoldRepositoryTest {
         assertTrue(api.historyCalls.all { it.limit == 10_000 })
     }
 
+    @Test
+    fun fetchTrendCandlesRequestsServerRangeAndReturnsSortedValidBars() = runBlocking {
+        val api = FakeGoldApi(
+            candleResponses = ArrayDeque(
+                listOf(
+                    ApiResponse(
+                        code = 0,
+                        message = "success",
+                        data = candlesResponse(
+                            range = "1h",
+                            bars = listOf(
+                                candleBar(timestampMillis("2026-06-16T00:02:00"), 892.1, 893.0, 891.8, 892.6),
+                                candleBar(timestampMillis("2026-06-16T00:01:00"), 891.2, 892.2, 890.9, 892.1),
+                                candleBar(timestampMillis("2026-06-16T00:03:00"), null, 893.0, 891.8, 892.6),
+                            ),
+                        ),
+                    )
+                ),
+            ),
+        )
+        val repository = GoldRepository(
+            api = api,
+            localStore = FakeGoldLocalStore(),
+        )
+
+        val result = repository.fetchTrendCandles(range = TrendTimeRange.OneHour)
+
+        assertEquals(null, result.message)
+        assertEquals("1h", api.candleCalls.single().range)
+        assertEquals(
+            listOf(
+                timestampMillis("2026-06-16T00:01:00"),
+                timestampMillis("2026-06-16T00:02:00"),
+            ),
+            result.candles.map { it.timestampMillis },
+        )
+    }
+
     private class FakeGoldApi(
         private val response: ApiResponse<GoldPriceDto>? = null,
         private val error: Throwable? = null,
         private val historyResponses: ArrayDeque<ApiResponse<GoldHistoryResponseDto>> = ArrayDeque(),
+        private val candleResponses: ArrayDeque<ApiResponse<GoldCandlesResponseDto>> = ArrayDeque(),
     ) : GoldApi {
         var callCount = 0
             private set
         val historyCalls = mutableListOf<HistoryCall>()
+        val candleCalls = mutableListOf<CandleCall>()
 
         override suspend fun getLatestGold(symbol: String): ApiResponse<GoldPriceDto> {
             callCount += 1
@@ -303,6 +345,17 @@ class GoldRepositoryTest {
                 limit = limit,
             )
             return historyResponses.removeFirst()
+        }
+
+        override suspend fun getGoldCandles(
+            symbol: String,
+            range: String,
+        ): ApiResponse<GoldCandlesResponseDto> {
+            candleCalls += CandleCall(
+                symbol = symbol,
+                range = range,
+            )
+            return candleResponses.removeFirst()
         }
 
         override suspend fun getAppConfig() = throw UnsupportedOperationException("Not used")
@@ -350,6 +403,11 @@ private data class HistoryCall(
     val limit: Int,
 )
 
+private data class CandleCall(
+    val symbol: String,
+    val range: String,
+)
+
 private fun historyResponse(
     date: String,
     points: List<GoldHistoryPointDto>,
@@ -370,6 +428,32 @@ private fun historyPoint(
     updateTime = "2026-06-16 00:00:00",
     serverTime = "2026-06-16 00:00:00",
     source = "finnhub",
+)
+
+private fun candlesResponse(
+    range: String,
+    bars: List<GoldCandleBarDto>,
+) = GoldCandlesResponseDto(
+    symbol = "XAU",
+    range = range,
+    resolution = "1m",
+    timezone = "Asia/Shanghai",
+    count = bars.size,
+    bars = bars,
+)
+
+private fun candleBar(
+    timestampMillis: Long,
+    open: Double?,
+    high: Double?,
+    low: Double?,
+    close: Double?,
+) = GoldCandleBarDto(
+    timestampMillis = timestampMillis,
+    open = open,
+    high = high,
+    low = low,
+    close = close,
 )
 
 private fun timestampMillis(value: String): Long =
