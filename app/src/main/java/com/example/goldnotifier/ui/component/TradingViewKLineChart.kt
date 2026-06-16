@@ -293,12 +293,17 @@ private fun List<GoldCandle>.toTradingViewData(): List<SeriesData> =
 
 private fun GoldCandle.toTradingViewData(): CandlestickData =
     CandlestickData(
-        time = Time.Utc(timestampMillis / 1000L),
+        time = Time.Utc(toTradingViewShanghaiTimestampSeconds(timestampMillis)),
         open = open.toFloat(),
         high = high.toFloat(),
         low = low.toFloat(),
         close = close.toFloat(),
     )
+
+internal fun toTradingViewShanghaiTimestampSeconds(timestampMillis: Long): Long =
+    (timestampMillis + TRADING_VIEW_SHANGHAI_OFFSET_MILLIS) / 1000L
+
+private const val TRADING_VIEW_SHANGHAI_OFFSET_MILLIS = 8 * 60 * 60 * 1000L
 
 private val TradingViewPanel = Color(0xFF111827)
 private val TradingViewGrid = Color(0xFF1F2937)

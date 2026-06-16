@@ -3,6 +3,11 @@ package com.example.goldnotifier.ui.component
 import com.example.goldnotifier.domain.model.GoldCandle
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 /*
 模块名: TradingViewKLineChartTest
@@ -98,6 +103,20 @@ class TradingViewKLineChartTest {
         )
 
         assertEquals(CandleChartUpdate.SetData, result)
+    }
+
+    @Test
+    fun shanghaiTimestampDisplaysAsShanghaiTimeOnTradingViewUtcAxis() {
+        val shanghaiMillis = LocalDateTime.of(2026, 6, 16, 16, 0)
+            .atZone(ZoneId.of("Asia/Shanghai"))
+            .toInstant()
+            .toEpochMilli()
+
+        val displayTime = Instant.ofEpochSecond(
+            toTradingViewShanghaiTimestampSeconds(shanghaiMillis),
+        ).atZone(ZoneOffset.UTC).toLocalTime()
+
+        assertEquals(LocalTime.of(16, 0), displayTime)
     }
 
     private fun candle(

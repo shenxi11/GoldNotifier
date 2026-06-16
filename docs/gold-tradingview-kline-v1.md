@@ -26,6 +26,7 @@
 - `6小时` 对应服务端 `range=6h`，K 线粒度为 `5m`。
 - `1天` 对应服务端 `range=1d`，K 线粒度为 `15m`。
 - K 线只代表服务端已经采集到的新鲜行情点，不等同于交易所级完整 OHLC。
+- 服务端返回 `timestampMillis` 为真实 epoch millis，客户端仅在传给 TradingView 时间轴时增加北京时间显示偏移，避免 UTC 轴把 16:00 显示为 08:00。
 
 ## Android 依赖
 

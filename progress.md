@@ -318,3 +318,23 @@
 - `progress.md`：追加本次 K 线拖拽卡顿优化记录。
 - 残余风险：TradingView Android wrapper 基于 WebView，自动化横向拖拽仍有明显 jank；若后续需要继续压到 5% 以下，建议使用 Perfetto 定位 WebView/JS 渲染瓶颈，或评估改为 Compose Canvas 自绘 K 线。
 - 回滚方式：回退上述 Kotlin、测试、文档和 progress 文件；如已提交，可执行本轮客户端提交的 `git revert`。
+
+## 2026-06-16 - Task: 修复 TradingView K 线时间轴显示 UTC 时间
+
+### What was done
+- 确认服务端 `/api/v1/gold/candles` 返回的 `timestampMillis` 是真实 epoch millis，`timezone` 为 `Asia/Shanghai`；示例 K 线为 UTC `08:01`，对应北京时间 `16:01`。
+- 客户端保留领域模型中的真实 `timestampMillis`，仅在传给 TradingView 时间轴时增加北京时间显示偏移，避免 TradingView UTC 轴把北京时间 `16:00` 显示为 `08:00`。
+- 补充 K 线时间轴回归测试，锁定北京时间 `2026-06-16 16:00` 在 TradingView UTC 轴上仍显示为 `16:00`。
+- 更新 TradingView K 线说明文档，明确服务端时间戳与客户端显示偏移的边界。
+
+### Testing
+- `Invoke-RestMethod http://64.90.3.109:9987/api/v1/gold/candles?symbol=XAU&range=1h`：返回 `timezone=Asia/Shanghai`，样例 `1781596860000` 对应 UTC `2026-06-16 08:01:00`、北京时间 `2026-06-16 16:01:00 +08:00`。
+- `.\gradlew.bat testDebugUnitTest assembleDebug`：通过。
+- 真机 `QGP7NVR4J7RW7HY5` 安装 Debug APK 并切到 K 线，截图确认设备 `16:11` 时 K 线底部显示 `16:07`、`16:10`，不再显示 UTC 的 `08:07`、`08:10`。
+
+### Notes
+- `app/src/main/java/com/example/goldnotifier/ui/component/TradingViewKLineChart.kt`：新增 TradingView 时间轴北京时间显示换算，K 线排序和增量更新仍使用原始时间戳。
+- `app/src/test/java/com/example/goldnotifier/ui/component/TradingViewKLineChartTest.kt`：新增北京时间到 TradingView UTC 轴显示时间的回归测试。
+- `docs/gold-tradingview-kline-v1.md`：补充 K 线时间轴显示口径。
+- `progress.md`：追加本次 K 线时间轴修复记录。
+- 回滚方式：恢复上述 4 个文件到提交前版本，或在提交后使用 `git revert <本次提交>` 回退。
