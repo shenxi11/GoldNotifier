@@ -293,17 +293,21 @@ class HomeViewModel(
         when {
             last == null -> candles += price.toCandle(bucketStart)
             last.timestampMillis == bucketStart -> {
-                candles[candles.lastIndex] = last.copy(
+                val updated = last.copy(
                     high = maxOf(last.high, price.price),
                     low = minOf(last.low, price.price),
                     close = price.price,
                 )
+                if (updated == last) return
+                candles[candles.lastIndex] = updated
             }
             last.timestampMillis < bucketStart -> candles += price.toCandle(bucketStart)
             else -> return
         }
         val startMillis = timestampMillis - range.windowMillis
-        loadedTrendCandles = candles.filter { candle -> candle.timestampMillis >= startMillis }
+        val nextCandles = candles.filter { candle -> candle.timestampMillis >= startMillis }
+        if (nextCandles == loadedTrendCandles) return
+        loadedTrendCandles = nextCandles
         _uiState.update { state -> state.copy(trendCandles = loadedTrendCandles) }
     }
 

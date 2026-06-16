@@ -12,6 +12,13 @@
 - 用户切换时间窗口时，折线重新请求 `/history`，K 线模式同步请求 `/candles`。
 - 前台 3 秒刷新到新鲜最新价时，客户端只更新当前最后一根 candle，不每 3 秒全量重拉 K 线。
 
+## 性能策略
+
+- TradingView 首次加载和切换时间窗口时使用全量 `setData`，并执行一次 `fitContent`。
+- 同一时间窗口内的实时刷新只使用 `series.update` 更新最后一根 K 线，不重置用户当前拖拽位置。
+- 如果最新价格没有改变当前 K 线的 `high/low/close`，客户端不更新 `HomeUiState`，避免无效重组。
+- K 线 WebView 在触摸期间会请求父级不要拦截事件，减少与首页纵向滚动的手势竞争。
+
 ## 数据口径
 
 - `5分钟` 对应服务端 `range=5m`，K 线粒度为 `15s`。
@@ -29,4 +36,4 @@
 ## 验证
 
 - 服务端 `.\.venv\Scripts\python.exe -m pytest`：验证 `/candles` API 契约和 OHLC 聚合规则。
-- 客户端 `.\gradlew.bat testDebugUnitTest`：验证客户端 candles 数据链路、DTO 过滤和 UI 编译。
+- 客户端 `.\gradlew.bat testDebugUnitTest`：验证客户端 candles 数据链路、DTO 过滤、K 线增量更新策略和 UI 编译。

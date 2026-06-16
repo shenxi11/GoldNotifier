@@ -1,9 +1,11 @@
 package com.example.goldnotifier.ui.component
 
+import android.view.MotionEvent
+import android.view.ViewGroup
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
@@ -23,8 +25,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.goldnotifier.domain.model.GoldCandle
+import com.example.goldnotifier.domain.trend.TrendTimeRange
 import com.tradingview.lightweightcharts.api.chart.models.color.toIntColor
 import com.tradingview.lightweightcharts.api.chart.models.color.surface.SolidColor
+import com.tradingview.lightweightcharts.api.interfaces.ChartApi
 import com.tradingview.lightweightcharts.api.interfaces.SeriesApi
 import com.tradingview.lightweightcharts.api.options.models.candlestickSeriesOptions
 import com.tradingview.lightweightcharts.api.options.models.chartOptions
@@ -37,6 +41,7 @@ import com.tradingview.lightweightcharts.api.series.common.SeriesData
 import com.tradingview.lightweightcharts.api.series.models.CandlestickData
 import com.tradingview.lightweightcharts.api.series.models.Time
 import com.tradingview.lightweightcharts.view.ChartsView
+import com.tradingview.lightweightcharts.view.gesture.TouchDelegate
 
 /*
 模块名: TradingViewKLineChart
@@ -50,10 +55,12 @@ import com.tradingview.lightweightcharts.view.ChartsView
 @Composable
 fun TradingViewKLineChart(
     candles: List<GoldCandle>,
+    selectedRange: TrendTimeRange,
     modifier: Modifier = Modifier,
 ) {
     val latestCandles by rememberUpdatedState(candles)
-    var seriesApi by remember { mutableStateOf<SeriesApi?>(null) }
+    val latestRangeKey by rememberUpdatedState(selectedRange.serverRange)
+    val chartController = remember { TradingViewCandleChartController() }
     var loadError by remember { mutableStateOf<String?>(null) }
 
     Box(
@@ -70,6 +77,7 @@ fun TradingViewKLineChart(
                 var configured = false
                 ChartsView(context).apply {
                     setBackgroundColor(TradingViewPanel.toArgb())
+                    addTouchDelegate(ParentInterceptTouchDelegate())
                     subscribeOnChartStateChange { state ->
                         when (state) {
                             is ChartsView.State.Ready -> {
@@ -80,9 +88,12 @@ fun TradingViewKLineChart(
                                 api.addCandlestickSeries(
                                     options = tradingViewCandlestickOptions(),
                                 ) { series ->
-                                    seriesApi = series
-                                    series.setData(latestCandles.toTradingViewData())
-                                    api.timeScale.fitContent()
+                                    chartController.attach(series)
+                                    chartController.render(
+                                        chartApi = api,
+                                        rangeKey = latestRangeKey,
+                                        candles = latestCandles,
+                                    )
                                 }
                             }
                             is ChartsView.State.Error -> {
@@ -95,8 +106,11 @@ fun TradingViewKLineChart(
             },
             update = { view ->
                 if (view.state is ChartsView.State.Ready) {
-                    seriesApi?.setData(latestCandles.toTradingViewData())
-                    view.api.timeScale.fitContent()
+                    chartController.render(
+                        chartApi = view.api,
+                        rangeKey = latestRangeKey,
+                        candles = latestCandles,
+                    )
                 }
             },
         )
@@ -166,7 +180,105 @@ private fun tradingViewCandlestickOptions() = candlestickSeriesOptions {
     wickDownColor = TradingViewGreen.toArgb().toIntColor()
 }
 
-private fun List<GoldCandle>.toTradingViewData(): List<SeriesData> =
+private class TradingViewCandleChartController {
+    private var seriesApi: SeriesApi? = null
+    private var renderedRangeKey: String? = null
+    private var renderedCandles: List<GoldCandle> = emptyList()
+
+    fun attach(series: SeriesApi) {
+        if (seriesApi === series) return
+        seriesApi = series
+        renderedRangeKey = null
+        renderedCandles = emptyList()
+    }
+
+    fun render(
+        chartApi: ChartApi,
+        rangeKey: String,
+        candles: List<GoldCandle>,
+    ) {
+        val series = seriesApi ?: return
+        val nextCandles = candles.normalizedCandles()
+        val update = resolveCandleChartUpdate(
+            previousRangeKey = renderedRangeKey,
+            previousCandles = renderedCandles,
+            nextRangeKey = rangeKey,
+            nextCandles = nextCandles,
+        )
+        when (update) {
+            CandleChartUpdate.SetData -> {
+                series.setData(nextCandles.toTradingViewData())
+                if (nextCandles.isNotEmpty()) {
+                    chartApi.timeScale.fitContent()
+                }
+            }
+            CandleChartUpdate.UpdateLast -> {
+                nextCandles.lastOrNull()?.let { series.update(it.toTradingViewData()) }
+            }
+            CandleChartUpdate.None -> return
+        }
+        renderedRangeKey = rangeKey
+        renderedCandles = nextCandles
+    }
+}
+
+private class ParentInterceptTouchDelegate : TouchDelegate {
+    override fun beforeTouchEvent(view: ViewGroup) = Unit
+
+    override fun onTouchEvent(
+        view: ViewGroup,
+        event: MotionEvent,
+    ): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN,
+            MotionEvent.ACTION_MOVE -> {
+                view.parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL -> {
+                view.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+        }
+        return false
+    }
+}
+
+internal enum class CandleChartUpdate {
+    None,
+    SetData,
+    UpdateLast,
+}
+
+internal fun resolveCandleChartUpdate(
+    previousRangeKey: String?,
+    previousCandles: List<GoldCandle>,
+    nextRangeKey: String,
+    nextCandles: List<GoldCandle>,
+): CandleChartUpdate {
+    if (previousRangeKey != nextRangeKey) return CandleChartUpdate.SetData
+    if (previousCandles == nextCandles) return CandleChartUpdate.None
+    if (nextCandles.isEmpty()) return CandleChartUpdate.SetData
+    if (previousCandles.isEmpty()) return CandleChartUpdate.SetData
+
+    val previousPrefix = previousCandles.dropLast(1)
+    val nextPrefix = nextCandles.dropLast(1)
+    val previousLast = previousCandles.last()
+    val nextLast = nextCandles.last()
+    val replacesLastCandle = previousCandles.size == nextCandles.size &&
+        previousPrefix == nextPrefix &&
+        previousLast.timestampMillis == nextLast.timestampMillis
+    val appendsNextCandle = nextCandles.size == previousCandles.size + 1 &&
+        nextPrefix == previousCandles &&
+        nextLast.timestampMillis > previousLast.timestampMillis
+
+    return if (replacesLastCandle || appendsNextCandle) {
+        CandleChartUpdate.UpdateLast
+    } else {
+        CandleChartUpdate.SetData
+    }
+}
+
+private fun List<GoldCandle>.normalizedCandles(): List<GoldCandle> =
     filter { candle ->
         candle.timestampMillis > 0L &&
             candle.open > 0.0 &&
@@ -175,15 +287,18 @@ private fun List<GoldCandle>.toTradingViewData(): List<SeriesData> =
             candle.close > 0.0
     }
         .sortedBy { candle -> candle.timestampMillis }
-        .map { candle ->
-            CandlestickData(
-                time = Time.Utc(candle.timestampMillis / 1000L),
-                open = candle.open.toFloat(),
-                high = candle.high.toFloat(),
-                low = candle.low.toFloat(),
-                close = candle.close.toFloat(),
-            )
-        }
+
+private fun List<GoldCandle>.toTradingViewData(): List<SeriesData> =
+    map { candle -> candle.toTradingViewData() }
+
+private fun GoldCandle.toTradingViewData(): CandlestickData =
+    CandlestickData(
+        time = Time.Utc(timestampMillis / 1000L),
+        open = open.toFloat(),
+        high = high.toFloat(),
+        low = low.toFloat(),
+        close = close.toFloat(),
+    )
 
 private val TradingViewPanel = Color(0xFF111827)
 private val TradingViewGrid = Color(0xFF1F2937)

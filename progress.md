@@ -291,3 +291,30 @@
 - 服务器部署目录仍存在未跟踪备份文件 `.env.backup.20260615143830`，本轮未修改。
 - `progress.md`：追加本次服务端提交和部署记录。
 - 回滚方式：在服务器 `/opt/gold-notifier/server` 执行 `git checkout 94bc4a1` 后 `docker compose up -d --build gold-api`；或在 GitHub 回退 `d518a9f` 后重新部署。
+
+## 2026-06-16 - Task: 优化 TradingView K 线拖拽卡顿
+
+### What was done
+- 将 K 线图更新策略从每次 Compose 更新都全量 `setData + fitContent`，调整为首次加载和切换周期才全量刷新。
+- 同一周期内最新 K 线变化时改用 TradingView `series.update` 增量更新，避免拖拽时被全量数据刷新和视图重置打断。
+- K 线 WebView 触摸期间请求父级不拦截触摸事件，减少与首页纵向滚动的手势竞争。
+- 刷新到的价格没有改变当前 K 线时，不更新 `HomeUiState`，减少无效重组。
+- 补充 K 线更新策略单元测试，并更新客户端 K 线说明文档。
+
+### Testing
+- `.\gradlew.bat testDebugUnitTest`：通过。
+- `.\gradlew.bat assembleDebug`：通过。
+- `git diff --check`：通过，仅提示 Windows 工作区换行转换警告。
+- 真机 `QGP7NVR4J7RW7HY5` 安装 Debug APK 并切到 K 线后，使用同一套 adb 横向拖拽脚本采集 `dumpsys gfxinfo`。
+- 修复前诊断样本：`Janky frames=11.86%`、`High input latency=599`。
+- 本轮稳定策略最终样本：`Janky frames=17.60%`、`High input latency=448`。输入延迟低于诊断样本，但自动化 jank 比例未达到 5% 目标。
+
+### Notes
+- `app/src/main/java/com/example/goldnotifier/ui/component/TradingViewKLineChart.kt`：新增增量更新控制器、触摸拦截委托和更新决策函数。
+- `app/src/main/java/com/example/goldnotifier/ui/component/GoldRealtimeTrendCard.kt`：向 K 线组件传入当前时间周期，供周期切换时判断全量刷新。
+- `app/src/main/java/com/example/goldnotifier/ui/screen/HomeViewModel.kt`：避免未改变 K 线时重复更新 UI 状态。
+- `app/src/test/java/com/example/goldnotifier/ui/component/TradingViewKLineChartTest.kt`：新增首次加载、周期切换、最后一根更新、新增一根和历史修正的更新策略测试。
+- `docs/gold-tradingview-kline-v1.md`：补充 K 线性能策略。
+- `progress.md`：追加本次 K 线拖拽卡顿优化记录。
+- 残余风险：TradingView Android wrapper 基于 WebView，自动化横向拖拽仍有明显 jank；若后续需要继续压到 5% 以下，建议使用 Perfetto 定位 WebView/JS 渲染瓶颈，或评估改为 Compose Canvas 自绘 K 线。
+- 回滚方式：回退上述 Kotlin、测试、文档和 progress 文件；如已提交，可执行本轮客户端提交的 `git revert`。

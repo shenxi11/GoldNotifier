@@ -126,7 +126,10 @@ fun GoldRealtimeTrendCard(
                             detail = "暂无足够行情生成K线",
                         )
                     } else {
-                        TradingViewKLineChart(candles = candles)
+                        TradingViewKLineChart(
+                            candles = candles,
+                            selectedRange = selectedRange,
+                        )
                         TrendFooter(
                             pointCount = candles.size,
                             selectedRange = selectedRange,
