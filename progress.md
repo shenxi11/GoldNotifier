@@ -338,3 +338,38 @@
 - `docs/gold-tradingview-kline-v1.md`：补充 K 线时间轴显示口径。
 - `progress.md`：追加本次 K 线时间轴修复记录。
 - 回滚方式：恢复上述 4 个文件到提交前版本，或在提交后使用 `git revert <本次提交>` 回退。
+
+## 2026-06-16 - Task: 新增 Go 高并发服务端实现
+
+### What was done
+- 新增独立 `server-go/` 模块，保留 Python 服务端不变，便于并行验证和快速回滚。
+- 实现 Go 版 `gold-api` 只读缓存服务，兼容现有 Android API 路径、字段和 `code/message/data` envelope。
+- 实现 Go 版 `gold-worker` 刷新服务，独立请求 Finnhub、Alpha Vantage 或 NowAPI，并写入 Redis latest、history、daily summary、source status 和 K 线预聚合缓存。
+- 新增 Redis 级 K 线缓存 `gold:candles:{symbol}:{range}`，避免高并发客户端重复触发 K 线聚合。
+- 新增 Go 版 Dockerfile、并行验证用 Compose 文件和迁移说明文档。
+
+### Testing
+- `cd server-go; go test ./...`：通过。
+- `cd server-go; go build ./cmd/gold-api ./cmd/gold-worker`：通过。
+- `cd server; .\.venv\Scripts\python.exe -m pytest`：34 passed，1 个 Starlette/httpx2 兼容性 warning。
+- `.\gradlew.bat testDebugUnitTest`：通过。
+
+### Notes
+- `server-go/go.mod`、`server-go/go.sum`：新增 Go 模块和依赖锁定。
+- `server-go/cmd/gold-api/main.go`：新增只读缓存 API 进程入口。
+- `server-go/cmd/gold-worker/main.go`：新增行情刷新 Worker 进程入口。
+- `server-go/internal/config/config.go`、`server-go/internal/config/config_test.go`：新增环境变量兼容配置和默认值测试。
+- `server-go/internal/model/model.go`：新增与 Android/Python 契约兼容的响应和业务模型。
+- `server-go/internal/timeutil/timeutil.go`：新增时间格式、时区、日期和 stale 判断工具。
+- `server-go/internal/candles/candles.go`、`server-go/internal/candles/candles_test.go`：新增 K 线聚合逻辑和 OHLC 测试。
+- `server-go/internal/cache/store.go`：新增 Redis latest、last_success、history、daily_summary、candles、限流和锁封装。
+- `server-go/internal/service/service.go`：新增 API 只读业务服务和 K 线缓存兜底重建逻辑。
+- `server-go/internal/httpapi/router.go`、`server-go/internal/httpapi/router_test.go`：新增兼容 HTTP 路由、Redis 限流和契约测试。
+- `server-go/internal/provider/source.go`：新增 Worker 上游数据源接口。
+- `server-go/internal/provider/finnhub/finnhub.go`、`server-go/internal/provider/finnhub/finnhub_test.go`：新增 Finnhub WebSocket、Alpha Vantage 汇率和换算测试。
+- `server-go/internal/provider/nowapi/nowapi.go`：新增 NowAPI 兼容数据源。
+- `server-go/internal/worker/runner.go`：新增定时刷新、Redis 分布式锁、缓存写入和 K 线预聚合。
+- `server-go/Dockerfile`、`server-go/docker-compose.go.yml`、`server-go/.dockerignore`：新增 Go 服务容器构建和 9988 并行验证部署文件。
+- `docs/go-server-migration-v1.md`：新增 Go 服务端架构、验证、迁移和回滚说明。
+- `progress.md`：追加本次 Go 服务端实现记录。
+- 回滚方式：删除 `server-go/` 和 `docs/go-server-migration-v1.md`，并回退本段 `progress.md` 记录；如已提交，使用 `git revert <本次提交>`。
