@@ -217,3 +217,21 @@
 - `docs/gold-mobile-ui-redesign-v1.3.md`：新增 TSX 设计稿到 Android Compose 的落地说明。
 - `progress.md`：追加本次移动端 UI 重设计记录。
 - 回滚方式：使用 Git 回退本轮客户端 UI 提交；如只需临时恢复旧首页，可优先回退 `HomeScreen`、`GoldPriceCard`、`GoldRealtimeTrendCard` 和 `GoldRealtimeTrendChart`。
+
+## 2026-06-16 - Task: 推送客户端深色行情 UI 版本
+
+### What was done
+- 将客户端趋势图、多时间尺度和深色行情 UI 改动提交到客户端仓库。
+- 推送 `main` 到 GitHub，供外部分析和后续构建使用。
+
+### Testing
+- 代码提交前 `.\gradlew.bat testDebugUnitTest`：通过。
+- 代码提交前 `git diff --cached --check`：通过。
+- 代码提交前 UTF-8 解码检查：本轮修改的 Kotlin、Markdown 和进度日志文件均通过。
+- `git push origin main`：通过。
+
+### Notes
+- 客户端 UI 代码提交 `22a03a1 redesign mobile gold dashboard`：包含深色行情 UI、趋势图多时间尺度和相关测试文档。
+- 本轮未提交 `server` 子仓库指针、`AGENTS.md` 或 `设计文档` 下的设计源文件。
+- `progress.md`：追加本次客户端仓库推送记录。
+- 回滚方式：执行 `git revert 22a03a1` 后重新推送；如同时回滚本记录，再回退本条进度日志提交。
