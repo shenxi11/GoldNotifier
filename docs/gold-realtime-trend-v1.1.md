@@ -1,0 +1,34 @@
+# GoldNotifier 实时趋势图 v1.1 落地说明
+
+## 业务目标
+
+在 App 端展示与当前 3 秒刷新频率一致的金价实时趋势图。当前版本只基于客户端已经拿到的最新行情构建短窗口趋势，不新增服务端历史行情接口，不引入 Redis，不增加图表库。
+
+## 已落地行为
+
+- 首页新增“实时趋势”卡片，展示最近 5 分钟内的客户端实时价格折线。
+- 每次前台自动刷新或手动刷新完成后，只有真实接口行情会进入趋势点缓冲区。
+- 缓存行情、延迟行情、异常价格不会追加为趋势点，避免折线被本地缓存污染。
+- 趋势点追加节奏与现有刷新频率保持一致，默认最小追加间隔为 2.5 秒，用于容忍协程调度抖动。
+- 趋势快照按低频策略写入 DataStore，用于短时间内回到 App 时恢复图表状态。
+- 首页改为纵向滚动布局，保证新增趋势卡片后小屏设备仍可访问刷新和权限控制区。
+
+## 数据流
+
+1. `GoldRepository.refreshGoldPrice()` 继续作为唯一行情刷新入口。
+2. `HomeViewModel.refreshOnce()` 根据刷新结果调用 `TrendPointBuffer.appendIfValid()`。
+3. `TrendPointBuffer` 在内存中维护最近 5 分钟趋势点，并过滤缓存、延迟和非法价格。
+4. `HomeUiState.trendPoints` 驱动 Compose 首页趋势卡片。
+5. `GoldRealtimeTrendChart` 使用 Compose Canvas 绘制网格、基准线和折线。
+6. `UserSettingsDataStore.cacheTrendSnapshot()` 低频保存趋势快照，App 停止时触发一次强制保存。
+
+## 当前边界
+
+- 该趋势图不是历史 K 线，不保证覆盖 App 未运行期间的价格变化。
+- DataStore 仅保存短期快照，不作为高频历史行情存储。
+- 服务端仓库无需改动；如果后续要做跨设备、长周期历史趋势，再评估服务端历史接口和持久化方案。
+
+## 验证
+
+- 已执行 `..\gradlew.bat testDebugUnitTest`。
+- 新增 `TrendPointBufferTest` 覆盖有效追加、缓存/延迟过滤、非法价格过滤、追加间隔、窗口裁剪和快照恢复排序过滤。

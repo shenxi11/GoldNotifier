@@ -3,8 +3,12 @@ package com.example.goldnotifier.data.repository
 import com.example.goldnotifier.data.api.GoldApi
 import com.example.goldnotifier.data.local.GoldLocalStore
 import com.example.goldnotifier.data.model.ApiResponse
+import com.example.goldnotifier.data.model.GoldHistoryPointDto
+import com.example.goldnotifier.data.model.GoldHistoryResponseDto
 import com.example.goldnotifier.data.model.GoldPriceDto
 import com.example.goldnotifier.domain.model.GoldPrice
+import com.example.goldnotifier.domain.model.GoldTrendSnapshot
+import com.example.goldnotifier.domain.trend.TrendTimeRange
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +19,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 /*
 模块名: GoldRepositoryTest
@@ -221,17 +227,82 @@ class GoldRepositoryTest {
         assertTrue(localStore.currentCachedPrice?.isStale ?: false)
     }
 
+    @Test
+    fun fetchTrendHistoryRequestsDatesAndReturnsSortedValidPoints() = runBlocking {
+        val nowMillis = timestampMillis("2026-06-16T00:05:00")
+        val api = FakeGoldApi(
+            historyResponses = ArrayDeque(
+                listOf(
+                    ApiResponse(
+                        code = 0,
+                        message = "success",
+                        data = historyResponse(
+                            date = "2026-06-15",
+                            points = listOf(
+                                historyPoint(timestampMillis("2026-06-14T23:59:59"), 880.0),
+                                historyPoint(timestampMillis("2026-06-15T23:59:57"), 891.2),
+                            ),
+                        ),
+                    ),
+                    ApiResponse(
+                        code = 0,
+                        message = "success",
+                        data = historyResponse(
+                            date = "2026-06-16",
+                            points = listOf(
+                                historyPoint(timestampMillis("2026-06-16T00:00:03"), 892.1),
+                                historyPoint(timestampMillis("2026-06-16T00:03:03"), null),
+                                historyPoint(timestampMillis("2026-06-16T00:04:03"), 892.6),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val repository = GoldRepository(
+            api = api,
+            localStore = FakeGoldLocalStore(),
+            wallClockMillis = { nowMillis },
+        )
+
+        val result = repository.fetchTrendHistory(range = TrendTimeRange.OneDay)
+
+        assertEquals(null, result.message)
+        assertEquals(listOf(891.2, 892.1, 892.6), result.points.map { it.price })
+        assertEquals(listOf("2026-06-15", "2026-06-16"), api.historyCalls.map { it.date })
+        assertTrue(api.historyCalls.all { it.limit == 10_000 })
+    }
+
     private class FakeGoldApi(
         private val response: ApiResponse<GoldPriceDto>? = null,
         private val error: Throwable? = null,
+        private val historyResponses: ArrayDeque<ApiResponse<GoldHistoryResponseDto>> = ArrayDeque(),
     ) : GoldApi {
         var callCount = 0
             private set
+        val historyCalls = mutableListOf<HistoryCall>()
 
         override suspend fun getLatestGold(symbol: String): ApiResponse<GoldPriceDto> {
             callCount += 1
             error?.let { throw it }
             return requireNotNull(response) { "response required" }
+        }
+
+        override suspend fun getGoldHistory(
+            symbol: String,
+            date: String,
+            startMillis: Long,
+            endMillis: Long,
+            limit: Int,
+        ): ApiResponse<GoldHistoryResponseDto> {
+            historyCalls += HistoryCall(
+                symbol = symbol,
+                date = date,
+                startMillis = startMillis,
+                endMillis = endMillis,
+                limit = limit,
+            )
+            return historyResponses.removeFirst()
         }
 
         override suspend fun getAppConfig() = throw UnsupportedOperationException("Not used")
@@ -241,6 +312,7 @@ class GoldRepositoryTest {
         initialPrice: GoldPrice? = null,
     ) : GoldLocalStore {
         private val cachedPrice = MutableStateFlow(initialPrice)
+        private val trendSnapshot = MutableStateFlow<GoldTrendSnapshot?>(null)
         private val enabled = MutableStateFlow(false)
         private val refreshInterval = MutableStateFlow(3)
 
@@ -248,6 +320,7 @@ class GoldRepositoryTest {
             get() = cachedPrice.value
 
         override val cachedGoldPrice: Flow<GoldPrice?> = cachedPrice.asStateFlow()
+        override val cachedTrendSnapshot: Flow<GoldTrendSnapshot?> = trendSnapshot.asStateFlow()
         override val notificationEnabled: Flow<Boolean> = enabled.asStateFlow()
         override val refreshIntervalSeconds: Flow<Int> = refreshInterval.asStateFlow()
 
@@ -262,5 +335,45 @@ class GoldRepositoryTest {
         override suspend fun cacheGoldPrice(price: GoldPrice) {
             cachedPrice.value = price
         }
+
+        override suspend fun cacheTrendSnapshot(snapshot: GoldTrendSnapshot) {
+            trendSnapshot.value = snapshot
+        }
     }
 }
+
+private data class HistoryCall(
+    val symbol: String,
+    val date: String,
+    val startMillis: Long,
+    val endMillis: Long,
+    val limit: Int,
+)
+
+private fun historyResponse(
+    date: String,
+    points: List<GoldHistoryPointDto>,
+) = GoldHistoryResponseDto(
+    symbol = "XAU",
+    date = date,
+    timezone = "Asia/Shanghai",
+    count = points.size,
+    points = points,
+)
+
+private fun historyPoint(
+    timestampMillis: Long,
+    price: Double?,
+) = GoldHistoryPointDto(
+    timestampMillis = timestampMillis,
+    price = price,
+    updateTime = "2026-06-16 00:00:00",
+    serverTime = "2026-06-16 00:00:00",
+    source = "finnhub",
+)
+
+private fun timestampMillis(value: String): Long =
+    LocalDateTime.parse(value)
+        .atZone(ZoneId.of("Asia/Shanghai"))
+        .toInstant()
+        .toEpochMilli()

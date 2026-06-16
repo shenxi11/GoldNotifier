@@ -7,10 +7,14 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.goldnotifier.domain.model.GoldPrice
+import com.example.goldnotifier.domain.model.GoldTrendSnapshot
 import com.example.goldnotifier.domain.model.isQuoteStale
+import com.google.gson.Gson
+import com.google.gson.JsonSyntaxException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -22,6 +26,7 @@ private val Context.goldNotifierDataStore: DataStore<Preferences> by preferences
 
 interface GoldLocalStore {
     val cachedGoldPrice: Flow<GoldPrice?>
+    val cachedTrendSnapshot: Flow<GoldTrendSnapshot?>
     val notificationEnabled: Flow<Boolean>
     val refreshIntervalSeconds: Flow<Int>
 
@@ -30,6 +35,8 @@ interface GoldLocalStore {
     suspend fun setRefreshIntervalSeconds(seconds: Int)
 
     suspend fun cacheGoldPrice(price: GoldPrice)
+
+    suspend fun cacheTrendSnapshot(snapshot: GoldTrendSnapshot)
 }
 
 /*
@@ -43,6 +50,7 @@ interface GoldLocalStore {
 */
 class UserSettingsDataStore(context: Context) : GoldLocalStore {
     private val dataStore = context.goldNotifierDataStore
+    private val gson = Gson()
 
     override val notificationEnabled: Flow<Boolean> = dataStore.safeData()
         .map { preferences -> preferences[Keys.NotificationEnabled] ?: false }
@@ -56,6 +64,9 @@ class UserSettingsDataStore(context: Context) : GoldLocalStore {
 
     override val cachedGoldPrice: Flow<GoldPrice?> = dataStore.safeData()
         .map { preferences -> preferences.toGoldPriceOrNull() }
+
+    override val cachedTrendSnapshot: Flow<GoldTrendSnapshot?> = dataStore.safeData()
+        .map { preferences -> preferences.toTrendSnapshotOrNull() }
 
     override suspend fun setNotificationEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
@@ -90,6 +101,13 @@ class UserSettingsDataStore(context: Context) : GoldLocalStore {
         }
     }
 
+    override suspend fun cacheTrendSnapshot(snapshot: GoldTrendSnapshot) {
+        dataStore.edit { preferences ->
+            preferences[Keys.TrendSnapshotJson] = gson.toJson(snapshot)
+            preferences[Keys.TrendSnapshotSavedAtMillis] = snapshot.savedAtMillis
+        }
+    }
+
     private fun DataStore<Preferences>.safeData(): Flow<Preferences> = data.catch { error ->
         if (error is IOException) {
             emit(androidx.datastore.preferences.core.emptyPreferences())
@@ -120,6 +138,15 @@ class UserSettingsDataStore(context: Context) : GoldLocalStore {
         )
     }
 
+    private fun Preferences.toTrendSnapshotOrNull(): GoldTrendSnapshot? {
+        val json = this[Keys.TrendSnapshotJson] ?: return null
+        return try {
+            gson.fromJson(json, GoldTrendSnapshot::class.java)
+        } catch (_: JsonSyntaxException) {
+            null
+        }
+    }
+
     private object Keys {
         val NotificationEnabled = booleanPreferencesKey("notification_enabled")
         val RefreshIntervalSeconds = intPreferencesKey("refresh_interval_seconds")
@@ -138,6 +165,8 @@ class UserSettingsDataStore(context: Context) : GoldLocalStore {
         val Source = stringPreferencesKey("gold_source")
         val MarketStatus = stringPreferencesKey("gold_market_status")
         val IsStale = booleanPreferencesKey("gold_is_stale")
+        val TrendSnapshotJson = stringPreferencesKey("trend_snapshot_json")
+        val TrendSnapshotSavedAtMillis = longPreferencesKey("trend_snapshot_saved_at_millis")
     }
 
     companion object {

@@ -110,7 +110,10 @@ private fun GoldNotifierApp(
                     hasNotificationPermission = context.hasNotificationPermission()
                     hasPanelAccessibilityPermission = context.hasNotificationPanelAccessibilityPermission()
                 }
-                Lifecycle.Event.ON_STOP -> AppVisibilityState.updateForeground(false)
+                Lifecycle.Event.ON_STOP -> {
+                    viewModel.saveTrendSnapshot(force = true)
+                    AppVisibilityState.updateForeground(false)
+                }
                 else -> Unit
             }
         }
@@ -160,6 +163,7 @@ private fun GoldNotifierApp(
             }
         },
         onRefreshIntervalChange = viewModel::setRefreshIntervalSeconds,
+        onTrendTimeRangeChange = viewModel::selectTrendTimeRange,
         onRefresh = viewModel::refresh,
         onOpenAccessibilitySettings = {
             accessibilitySettingsLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

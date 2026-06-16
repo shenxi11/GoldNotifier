@@ -1,11 +1,15 @@
 package com.example.goldnotifier.ui.component
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,11 +51,11 @@ fun GoldPriceCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(0.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = MarketPanel,
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         if (price == null) {
             EmptyQuoteContent()
@@ -72,16 +76,18 @@ private fun EmptyQuoteContent() {
         Text(
             text = "现货黄金 XAU",
             style = MaterialTheme.typography.titleMedium,
+            color = MarketTextPrimary,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
             text = "等待行情数据",
             style = MaterialTheme.typography.displaySmall,
+            color = MarketTextPrimary,
             fontWeight = FontWeight.Bold,
         )
         Text(
             text = "请检查网络或服务端地址配置",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MarketTextSecondary,
             style = MaterialTheme.typography.bodyMedium,
         )
     }
@@ -93,47 +99,31 @@ private fun QuoteContent(price: GoldPrice) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "${price.name} ${price.symbol}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = price.source.ifBlank { "server" },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Bottom,
         ) {
-            Column {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 Text(
                     text = price.displayPrice(),
                     color = trendColor,
-                    fontSize = 44.sp,
-                    lineHeight = 48.sp,
+                    fontSize = 42.sp,
+                    lineHeight = 46.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = price.unit,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MarketTextSecondary,
                 )
             }
             Column(
@@ -147,33 +137,38 @@ private fun QuoteContent(price: GoldPrice) {
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                 )
-                Text(
-                    text = price.shortUpdateTime(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(trendColor, CircleShape),
+                    )
+                    Text(
+                        text = price.shortUpdateTime(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MarketTextMuted,
+                        maxLines = 1,
+                    )
+                }
             }
         }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             QuoteMetric(label = "今开", value = price.openPrice.displayNumber(), modifier = Modifier.weight(1f))
             QuoteMetric(label = "昨收", value = price.previousClose.displayNumber(), modifier = Modifier.weight(1f))
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
             QuoteMetric(label = "最高", value = price.high.displayNumber(), modifier = Modifier.weight(1f))
             QuoteMetric(label = "最低", value = price.low.displayNumber(), modifier = Modifier.weight(1f))
         }
         if (price.isQuoteStale()) {
             Text(
                 text = STALE_QUOTE_MESSAGE,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MarketTextSecondary,
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -182,30 +177,42 @@ private fun QuoteContent(price: GoldPrice) {
 
 @Composable
 private fun QuoteMetric(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MarketTextSecondary,
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyLarge,
+            color = MarketTextPrimary,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
 @Composable
 private fun GoldPrice.trendColor(): Color {
-    if (isQuoteStale()) return MaterialTheme.colorScheme.onSurfaceVariant
+    if (isQuoteStale()) return MarketTextSecondary
     return when (trend) {
-        MarketTrend.Up -> Color(0xFFD32F2F)
-        MarketTrend.Down -> Color(0xFF2E7D32)
-        MarketTrend.Flat -> MaterialTheme.colorScheme.onSurfaceVariant
+        MarketTrend.Up -> MarketRed
+        MarketTrend.Down -> MarketGreen
+        MarketTrend.Flat -> MarketTextSecondary
     }
 }
+
+private val MarketPanel = Color(0xFF111827)
+private val MarketTextPrimary = Color(0xFFF9FAFB)
+private val MarketTextSecondary = Color(0xFF9CA3AF)
+private val MarketTextMuted = Color(0xFF6B7280)
+private val MarketGreen = Color(0xFF10B981)
+private val MarketRed = Color(0xFFEF4444)
 
 @Preview(showBackground = true)
 @Composable
