@@ -63,6 +63,8 @@ Invoke-RestMethod http://64.90.3.109:9988/api/v1/gold/latest?symbol=XAU
 Invoke-RestMethod http://64.90.3.109:9988/api/v1/gold/candles?symbol=XAU&range=1h
 ```
 
+正式接管 9987 时使用 `docker-compose.prod.yml`。该文件不会创建新 Redis，而是接入现有 `gold-redis` 所在 Docker 网络，并通过 `REDIS_URL=redis://gold-redis:6379/0` 复用生产缓存。
+
 ## 迁移步骤
 
 1. 保持 Python 服务继续运行在 `9987`。
@@ -72,6 +74,37 @@ Invoke-RestMethod http://64.90.3.109:9988/api/v1/gold/candles?symbol=XAU&range=1
 5. 验证通过后，停止 Python 服务，把 Go API 切到正式端口 `9987`。
 6. 保留 Python 服务端一个版本周期，出现问题时直接回滚容器。
 
+正式切换命令：
+
+```bash
+cd /opt/gold-notifier/app
+git fetch origin
+git checkout main
+git pull --ff-only
+
+GOLD_DOCKER_NETWORK=$(docker inspect gold-redis --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}')
+cd /opt/gold-notifier/app/server-go
+GOLD_DOCKER_NETWORK="$GOLD_DOCKER_NETWORK" GOLD_ENV_FILE=/opt/gold-notifier/server/.env docker compose -f docker-compose.prod.yml build
+
+cd /opt/gold-notifier/server
+docker compose stop gold-api
+
+cd /opt/gold-notifier/app/server-go
+GOLD_DOCKER_NETWORK="$GOLD_DOCKER_NETWORK" GOLD_ENV_FILE=/opt/gold-notifier/server/.env docker compose -f docker-compose.prod.yml up -d
+```
+
+切换后验证：
+
+```bash
+curl -fsS http://127.0.0.1:9987/api/v1/health
+curl -fsS "http://127.0.0.1:9987/api/v1/gold/latest?symbol=XAU"
+curl -fsS "http://127.0.0.1:9987/api/v1/gold/candles?symbol=XAU&range=1h"
+curl -fsS "http://64.90.3.109:9987/api/v1/gold/latest?symbol=XAU"
+docker ps --filter name=gold
+docker logs --tail 100 gold-api-go
+docker logs --tail 100 gold-worker-go
+```
+
 ## 回滚
 
 Go 版本保持 Redis key 和 JSON 字段兼容，所以回滚不需要客户端发版：
@@ -80,9 +113,23 @@ Go 版本保持 Redis key 和 JSON 字段兼容，所以回滚不需要客户端
 2. 重新启动 Python `server/docker-compose.yml`。
 3. 确认 `/api/v1/gold/latest` 和 `/api/v1/gold/candles` 正常返回。
 
+回滚命令：
+
+```bash
+cd /opt/gold-notifier/app/server-go
+GOLD_DOCKER_NETWORK="$GOLD_DOCKER_NETWORK" GOLD_ENV_FILE=/opt/gold-notifier/server/.env docker compose -f docker-compose.prod.yml down
+
+cd /opt/gold-notifier/server
+docker compose up -d gold-api
+curl -fsS "http://64.90.3.109:9987/api/v1/gold/latest?symbol=XAU"
+```
+
+回滚和切换都不要执行 `docker compose down` 停止 Python 目录下的 `redis` 服务；生产 Redis 容器 `gold-redis` 必须保留。
+
 ## 当前边界
 
 - 默认只支持 `XAU`，其他 symbol 继续返回业务错误。
 - 当前 Go Compose 使用独立 Redis 容器和 `9988` 端口，避免误覆盖生产 Python 服务。
+- 生产 Compose 使用现有 `gold-redis` 和 `9987` 端口，必须先停止 Python `gold-api` 才能启动。
 - `/metrics` 当前为占位文本端点，后续如需要接 Prometheus 再补正式指标。
 - K 线时间戳仍是真实 epoch millis，客户端继续负责 TradingView 北京时间显示修正。

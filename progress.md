@@ -373,3 +373,21 @@
 - `docs/go-server-migration-v1.md`：新增 Go 服务端架构、验证、迁移和回滚说明。
 - `progress.md`：追加本次 Go 服务端实现记录。
 - 回滚方式：删除 `server-go/` 和 `docs/go-server-migration-v1.md`，并回退本段 `progress.md` 记录；如已提交，使用 `git revert <本次提交>`。
+
+## 2026-06-16 - Task: 准备 Go 服务端生产接管配置
+
+### What was done
+- 新增 Go 服务端生产 Compose 文件，正式接管时 `gold-api-go` 使用 `9987:8080`，`gold-worker-go` 不暴露端口。
+- 生产 Compose 不创建新 Redis，改为通过外部 Docker 网络连接现有 `gold-redis`，复用生产 Redis 数据和历史行情。
+- 更新 Go 服务端迁移文档，补充正式切换、验证和回滚命令，并明确不要停止生产 Redis。
+
+### Testing
+- `cd server-go; go test ./...`：通过。
+- `cd server-go; go build ./cmd/gold-api ./cmd/gold-worker`：通过。
+- 本机无 Docker CLI，`docker compose -f docker-compose.prod.yml config` 将在服务器执行。
+
+### Notes
+- `server-go/docker-compose.prod.yml`：新增 Go API/Worker 生产接管配置，使用现有 `gold-redis` 和正式端口 `9987`。
+- `docs/go-server-migration-v1.md`：补充生产切换、验证和回滚步骤。
+- `progress.md`：追加本次生产接管配置记录。
+- 回滚方式：删除 `server-go/docker-compose.prod.yml`，并恢复 `docs/go-server-migration-v1.md` 和 `progress.md` 到本轮修改前；如已提交，使用 `git revert <本次提交>`。
