@@ -391,3 +391,27 @@
 - `docs/go-server-migration-v1.md`：补充生产切换、验证和回滚步骤。
 - `progress.md`：追加本次生产接管配置记录。
 - 回滚方式：删除 `server-go/docker-compose.prod.yml`，并恢复 `docs/go-server-migration-v1.md` 和 `progress.md` 到本轮修改前；如已提交，使用 `git revert <本次提交>`。
+
+## 2026-06-16 - Task: 切换线上服务端到 Go API
+
+### What was done
+- 服务器 `/opt/gold-notifier/app` 拉取客户端主仓库 `main`，线上版本更新到 `b965feb`。
+- 在服务器执行 Go 生产 Compose 校验与镜像构建，复用现有 `server_default` Docker 网络和 `gold-redis` 数据。
+- 停止旧 Python API 容器 `gold-api`，启动 `gold-api-go` 接管公网 `9987` 端口，并启动 `gold-worker-go` 统一刷新行情缓存。
+- 确认客户端继续通过原有 `/api/v1/gold/latest` 和 `/api/v1/gold/candles` 路径访问数据，不需要改客户端接口地址。
+
+### Testing
+- 服务器执行 `docker compose -f docker-compose.prod.yml config`：通过。
+- 服务器执行 `docker compose -f docker-compose.prod.yml build`：通过，生成 `gold-api-go:latest` 镜像。
+- 服务器本机 `curl http://127.0.0.1:9987/api/v1/health`：返回 `ok=true`，Redis 状态 `ok=true`，数据源为 `finnhub`。
+- 服务器本机 `curl http://127.0.0.1:9987/api/v1/gold/latest?symbol=XAU`：返回现货黄金最新价，字段包含 `open`、`prevClose`、`high`、`low`、`marketStatus`。
+- 服务器本机 `curl http://127.0.0.1:9987/api/v1/gold/candles?symbol=XAU&range=1h`：返回 K 线数据。
+- 本机公网 `curl http://64.90.3.109:9987/api/v1/health`：返回 `ok=true`。
+- 本机公网 `curl http://64.90.3.109:9987/api/v1/gold/latest?symbol=XAU`：返回 `code=0`。
+- 本机公网 `curl http://64.90.3.109:9987/api/v1/gold/candles?symbol=XAU&range=1h`：返回 `code=0`，`count=61`。
+- 服务器 `docker ps --filter name=gold`：运行 `gold-api-go`、`gold-worker-go`、`gold-redis`，旧 `gold-api` 不在运行列表。
+
+### Notes
+- `progress.md`：追加本次线上 Go 服务接管记录。
+- 远端状态：`gold-api-go` 已接管 `0.0.0.0:9987->8080`，`gold-worker-go` 已开始刷新 Finnhub 行情并写入 Redis。
+- 回滚方式：登录服务器后执行 `cd /opt/gold-notifier/app/server-go && GOLD_DOCKER_NETWORK=server_default GOLD_ENV_FILE=/opt/gold-notifier/server/.env docker compose -f docker-compose.prod.yml down && docker start gold-api`，再用 `curl http://127.0.0.1:9987/api/v1/health` 验证旧 Python API 恢复。
