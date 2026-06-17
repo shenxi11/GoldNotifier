@@ -438,3 +438,25 @@
 - `docs/go-server-migration-v1.md`：补充 API 陈旧数据兜底和 Worker 自恢复说明。
 - `progress.md`：追加本次 Go 服务端自恢复优化记录。
 - 回滚方式：恢复上述文件到本轮修改前；如已提交，执行 `git revert <本次提交>` 后重新部署 Go 服务。
+
+## 2026-06-17 - Task: 部署 Go 服务端行情刷新自恢复优化
+
+### What was done
+- 通过本地 `git bundle` 将提交 `f7a9cc2` 同步到服务器 `/opt/gold-notifier/app`，服务器仓库从 `b965feb` 快进到 `f7a9cc2`。
+- 在服务器重新构建 `gold-api-go` 和 `gold-worker-go` 镜像，并滚动重建两个 Go 容器。
+- 线上继续复用现有 `gold-redis` 和 `9987` 公网端口，旧 Python API 未重新启用。
+
+### Testing
+- 服务器执行 `git bundle verify /tmp/goldnotifier-main-f7a9cc2.bundle`：通过。
+- 服务器执行 `docker compose -f docker-compose.prod.yml config`：通过。
+- 服务器执行 `docker compose -f docker-compose.prod.yml build`：通过。
+- 服务器本机 `curl http://127.0.0.1:9987/api/v1/health`：返回 `ok=true`，`sourceStatus.ok=true`。
+- 服务器本机 `curl http://127.0.0.1:9987/api/v1/gold/latest?symbol=XAU`：返回 `code=0`。
+- 服务器本机 `curl http://127.0.0.1:9987/api/v1/gold/candles?symbol=XAU&range=1h`：返回 `code=0`，`count=18`。
+- 本机公网 `curl http://64.90.3.109:9987/api/v1/health`：返回 `ok=true`。
+- 本机公网 `curl http://64.90.3.109:9987/api/v1/gold/latest?symbol=XAU`：返回 `code=0`。
+
+### Notes
+- `progress.md`：追加本次线上部署记录。
+- GitHub 推送状态：本地提交已完成，但当前本机访问 `github.com:443` 超时，`git push origin main` 暂未成功；服务器已通过 bundle 部署到 `f7a9cc2`。
+- 回滚方式：服务器执行 `cd /opt/gold-notifier/app/server-go && GOLD_DOCKER_NETWORK=server_default GOLD_ENV_FILE=/opt/gold-notifier/server/.env docker compose -f docker-compose.prod.yml down && docker start gold-api` 可恢复旧 Python API；若只回滚本次 Go 代码，可在服务器仓库回退到上一个 Go 服务端提交后重新构建并 `docker compose -f docker-compose.prod.yml up -d`。
