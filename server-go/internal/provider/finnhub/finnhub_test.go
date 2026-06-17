@@ -1,6 +1,9 @@
 package finnhub
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestBuildGoldPriceFromSnapshotConvertsToCNYPerGram(t *testing.T) {
 	price, err := BuildGoldPriceFromSnapshot(
@@ -37,5 +40,22 @@ func TestBuildGoldPriceFromSnapshotRejectsInvalidQuotes(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestStreamReconnectDelayCaps(t *testing.T) {
+	cases := []struct {
+		failures int
+		want     time.Duration
+	}{
+		{failures: 0, want: 2 * time.Second},
+		{failures: 1, want: 2 * time.Second},
+		{failures: 3, want: 6 * time.Second},
+		{failures: 99, want: 30 * time.Second},
+	}
+	for _, tc := range cases {
+		if got := streamReconnectDelay(tc.failures); got != tc.want {
+			t.Fatalf("streamReconnectDelay(%d) = %s, want %s", tc.failures, got, tc.want)
+		}
 	}
 }

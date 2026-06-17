@@ -415,3 +415,26 @@
 - `progress.md`：追加本次线上 Go 服务接管记录。
 - 远端状态：`gold-api-go` 已接管 `0.0.0.0:9987->8080`，`gold-worker-go` 已开始刷新 Finnhub 行情并写入 Redis。
 - 回滚方式：登录服务器后执行 `cd /opt/gold-notifier/app/server-go && GOLD_DOCKER_NETWORK=server_default GOLD_ENV_FILE=/opt/gold-notifier/server/.env docker compose -f docker-compose.prod.yml down && docker start gold-api`，再用 `curl http://127.0.0.1:9987/api/v1/health` 验证旧 Python API 恢复。
+
+## 2026-06-17 - Task: 增强 Go 服务端行情刷新自恢复
+
+### What was done
+- 修复 Finnhub WebSocket 异常后容易卡在旧连接的问题：收到上游错误或等待完整报价快照超时时，主动关闭当前连接并重建。
+- 为 Finnhub 流重连增加递增退避，连续失败时最高等待 30 秒，降低上游 429 风险。
+- 将 `last_success` 默认保留期从 1 天提高到 7 天，并保证不会短于历史行情保留期，避免实时缓存过期后客户端直接拿到空数据。
+- 补充 API 兜底和 Finnhub 重连退避的回归测试，并更新 Go 服务端迁移文档。
+
+### Testing
+- `cd server-go; go test ./...`：通过。
+- `cd server-go; go build ./cmd/gold-api ./cmd/gold-worker`：通过。
+
+### Notes
+- `server-go/internal/provider/finnhub/finnhub.go`：新增连接跟踪、超时强制重连、上游错误重连和递增退避。
+- `server-go/internal/cache/store.go`：新增 `last_success` 保留期下限保护。
+- `server-go/internal/config/config.go`：将 `LAST_SUCCESS_TTL_SECONDS` 默认值调整为 604800 秒。
+- `server-go/internal/config/config_test.go`：更新默认配置测试。
+- `server-go/internal/httpapi/router_test.go`：新增实时缓存过期后返回 `last_success` 陈旧兜底数据的测试。
+- `server-go/internal/provider/finnhub/finnhub_test.go`：新增 Finnhub 重连退避上限测试。
+- `docs/go-server-migration-v1.md`：补充 API 陈旧数据兜底和 Worker 自恢复说明。
+- `progress.md`：追加本次 Go 服务端自恢复优化记录。
+- 回滚方式：恢复上述文件到本轮修改前；如已提交，执行 `git revert <本次提交>` 后重新部署 Go 服务。

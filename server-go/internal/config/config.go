@@ -87,7 +87,7 @@ func FromMap(env map[string]string) Settings {
 		RedisURL:                    redisURL,
 		RedisPoolSize:               intValue(env, "REDIS_POOL_SIZE", 50),
 		LatestCacheTTLSeconds:       intValue(env, "LATEST_CACHE_TTL_SECONDS", 10),
-		LastSuccessTTLSeconds:       intValue(env, "LAST_SUCCESS_TTL_SECONDS", 86400),
+		LastSuccessTTLSeconds:       intValue(env, "LAST_SUCCESS_TTL_SECONDS", 604800),
 		HistoryRetentionDays:        intValue(env, "HISTORY_RETENTION_DAYS", 2),
 		CandlesCacheTTLSeconds:      intValue(env, "CANDLES_CACHE_TTL_SECONDS", 10),
 		StaleAfterSeconds:           intValue(env, "STALE_AFTER_SECONDS", 180),

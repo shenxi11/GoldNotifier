@@ -67,7 +67,7 @@ func (s *Store) StoreSuccess(ctx context.Context, price model.GoldPrice) (model.
 	if err := setJSON(ctx, s.redis, latestKey(enriched.Symbol), enriched, seconds(s.settings.LatestCacheTTLSeconds)); err != nil {
 		return price, err
 	}
-	if err := setJSON(ctx, s.redis, lastSuccessKey(enriched.Symbol), enriched, seconds(s.settings.LastSuccessTTLSeconds)); err != nil {
+	if err := setJSON(ctx, s.redis, lastSuccessKey(enriched.Symbol), enriched, s.lastSuccessRetention()); err != nil {
 		return price, err
 	}
 	return enriched, nil
@@ -370,6 +370,14 @@ func (s *Store) historyRetention() time.Duration {
 		days = 1
 	}
 	return time.Duration(days) * 24 * time.Hour
+}
+
+func (s *Store) lastSuccessRetention() time.Duration {
+	retention := seconds(s.settings.LastSuccessTTLSeconds)
+	if historyRetention := s.historyRetention(); retention < historyRetention {
+		return historyRetention
+	}
+	return retention
 }
 
 func seconds(value int) time.Duration {

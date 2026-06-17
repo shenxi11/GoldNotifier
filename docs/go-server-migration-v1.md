@@ -40,6 +40,10 @@ Go API 保留现有路径：
 
 `/candles` 优先读预聚合缓存，缓存缺失时才从历史点兜底重建，避免高并发下每个客户端重复聚合。
 
+`/latest` 优先读 `gold:latest:{symbol}`。如果实时缓存过期但 `gold:last_success:{symbol}` 仍存在，API 返回该兜底数据，并将 `source` 标记为 `cache`、`isStale` 标记为 `true`，避免客户端因短时上游异常直接拿到空数据。`gold:last_success:{symbol}` 默认保留 7 天，且写入时不会短于历史行情保留期。
+
+`gold-worker` 的 Finnhub WebSocket 收到上游 `error` 或等待完整报价快照超时时，会关闭当前连接并重建流连接；连续失败时按 2 秒递增退避，最高 30 秒，避免上游 429 时持续高频重连。
+
 ## 本地验证
 
 ```powershell
@@ -133,3 +137,4 @@ curl -fsS "http://64.90.3.109:9987/api/v1/gold/latest?symbol=XAU"
 - 生产 Compose 使用现有 `gold-redis` 和 `9987` 端口，必须先停止 Python `gold-api` 才能启动。
 - `/metrics` 当前为占位文本端点，后续如需要接 Prometheus 再补正式指标。
 - K 线时间戳仍是真实 epoch millis，客户端继续负责 TradingView 北京时间显示修正。
+- Finnhub WebSocket 仍依赖上游可用性；当上游长时间不可用时，API 会返回 `last_success` 兜底数据，但客户端应通过 `isStale=true` 识别陈旧行情。

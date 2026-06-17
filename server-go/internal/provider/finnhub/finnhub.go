@@ -59,6 +59,7 @@ type Provider struct {
 	notify           chan struct{}
 	streamMu         sync.Mutex
 	streamStarted    bool
+	activeConn       *websocket.Conn
 	lastStreamError  string
 	usdCNYCache      *Quote
 	usdCNYCachedTime time.Time
@@ -119,6 +120,7 @@ func (p *Provider) collectStreamPrices(ctx context.Context) (map[string]StreamPr
 			if last := p.lastError(); last != "" {
 				detail += ": " + last
 			}
+			p.forceReconnect()
 			return nil, errors.New(detail)
 		}
 		select {
@@ -141,12 +143,18 @@ func (p *Provider) ensureStreamTask(symbols []string) {
 }
 
 func (p *Provider) runStream(symbols []string) {
+	failures := 0
 	for {
+		started := time.Now()
 		if err := p.runStreamOnce(symbols); err != nil {
+			if time.Since(started) > time.Minute {
+				failures = 0
+			}
+			failures++
 			p.setLastError(err.Error())
 			p.signal()
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(streamReconnectDelay(failures))
 	}
 }
 
@@ -157,6 +165,8 @@ func (p *Provider) runStreamOnce(symbols []string) error {
 	if err != nil {
 		return fmt.Errorf("Finnhub stream connection failed: %w", err)
 	}
+	p.setActiveConn(conn)
+	defer p.clearActiveConn(conn)
 	defer conn.Close(websocket.StatusNormalClosure, "")
 	p.setLastError("")
 	for _, symbol := range symbols {
@@ -183,8 +193,7 @@ func (p *Provider) runStreamOnce(symbols []string) error {
 		case "trade":
 			p.captureTradePrices(payload["data"], symbols)
 		case "error":
-			p.setLastError(fmt.Sprint(payload["msg"]))
-			p.signal()
+			return fmt.Errorf("Finnhub stream error: %s", fmt.Sprint(payload["msg"]))
 		}
 	}
 }
@@ -339,6 +348,29 @@ func (p *Provider) signal() {
 	}
 }
 
+func (p *Provider) setActiveConn(conn *websocket.Conn) {
+	p.streamMu.Lock()
+	defer p.streamMu.Unlock()
+	p.activeConn = conn
+}
+
+func (p *Provider) clearActiveConn(conn *websocket.Conn) {
+	p.streamMu.Lock()
+	defer p.streamMu.Unlock()
+	if p.activeConn == conn {
+		p.activeConn = nil
+	}
+}
+
+func (p *Provider) forceReconnect() {
+	p.streamMu.Lock()
+	conn := p.activeConn
+	p.streamMu.Unlock()
+	if conn != nil {
+		_ = conn.Close(websocket.StatusGoingAway, "snapshot timeout")
+	}
+}
+
 func (p *Provider) setLastError(value string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -483,6 +515,17 @@ func durationSeconds(seconds float64) time.Duration {
 		seconds = 1
 	}
 	return time.Duration(seconds * float64(time.Second))
+}
+
+func streamReconnectDelay(failures int) time.Duration {
+	if failures < 1 {
+		return 2 * time.Second
+	}
+	delay := time.Duration(failures*2) * time.Second
+	if delay > 30*time.Second {
+		return 30 * time.Second
+	}
+	return delay
 }
 
 func round2(value float64) float64 {

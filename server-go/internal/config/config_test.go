@@ -14,6 +14,9 @@ func TestFromMapKeepsPythonCompatibleDefaults(t *testing.T) {
 	if settings.LatestCacheTTLSeconds != 10 {
 		t.Fatalf("LatestCacheTTLSeconds = %d", settings.LatestCacheTTLSeconds)
 	}
+	if settings.LastSuccessTTLSeconds != 604800 {
+		t.Fatalf("LastSuccessTTLSeconds = %d", settings.LastSuccessTTLSeconds)
+	}
 	if settings.DefaultSymbol != "XAU" {
 		t.Fatalf("DefaultSymbol = %s", settings.DefaultSymbol)
 	}
