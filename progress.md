@@ -503,3 +503,31 @@
 - `docs/gold-realtime-trend-v1.1.md`：更新趋势曲线从全点穿越到高密度插值重采样的行为说明。
 - `progress.md`：追加本次插值法优化记录。
 - 回滚方式：恢复上述 4 个文件到本轮修改前；如已提交，执行 `git revert <本次提交>`。
+
+## 2026-06-18 - Task: 长期存储每日收盘价
+
+### What was done
+- 将 Go 服务端每日汇总 `gold:daily_summary:{SYMBOL}:{YYYY-MM-DD}` 的保留期从历史明细保留期中拆分出来，新增 `DAILY_SUMMARY_RETENTION_DAYS` 配置。
+- 默认每日汇总保留 `3650` 天，继续保存 `open/high/low/close` 和开收盘时间戳，用于后续日 K 数据基础。
+- 历史明细 `gold:history:{SYMBOL}:{YYYY-MM-DD}` 仍默认保留 `2` 天，避免长期保存高频明细导致 Redis 数据膨胀。
+- 读取已有每日汇总时会刷新为长期 TTL，部署前短 TTL 的 summary key 被读取后会自动续期。
+- 更新 Go 本地与生产 compose 配置、服务端历史文档和 Go 服务迁移文档。
+- 新增 Go 单元测试覆盖配置默认值、配置覆盖、每日汇总长期 TTL、历史明细短 TTL 和旧 summary 读取续期。
+
+### Testing
+- `go test ./...`（在 `server-go` 目录）：通过。
+- `git diff --check`：通过，仅提示当前工作区文件后续可能按 Git 配置从 LF 转为 CRLF。
+- UTF-8 解码检查：`config.go`、`config_test.go`、`store.go`、`store_test.go`、两个 compose 文件、两份 docs 通过。
+- `docker compose -f docker-compose.prod.yml config`：未执行成功，本机缺少 `docker` 命令。
+
+### Notes
+- `server-go/internal/config/config.go`：新增 `DailySummaryRetentionDays` 和 `DAILY_SUMMARY_RETENTION_DAYS` 默认值。
+- `server-go/internal/config/config_test.go`：补充每日汇总保留期配置测试。
+- `server-go/internal/cache/store.go`：每日汇总写入、回填和读取续期改用独立长期 TTL。
+- `server-go/internal/cache/store_test.go`：新增 Redis TTL 行为测试。
+- `server-go/docker-compose.prod.yml`：生产 API/Worker 增加 `DAILY_SUMMARY_RETENTION_DAYS=3650`。
+- `server-go/docker-compose.go.yml`：本地 Go API/Worker 增加 `DAILY_SUMMARY_RETENTION_DAYS=3650`。
+- `docs/gold-server-history-v1.md`：说明每日汇总长期保留和历史明细短期保留边界。
+- `docs/go-server-migration-v1.md`：补充 Go 服务 Redis 数据保留策略。
+- `progress.md`：追加本次每日收盘价长期存储记录。
+- 回滚方式：恢复上述 9 个文件到本轮修改前；如已提交，执行 `git revert <本次提交>`。

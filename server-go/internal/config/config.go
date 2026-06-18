@@ -38,6 +38,7 @@ type Settings struct {
 	LatestCacheTTLSeconds       int
 	LastSuccessTTLSeconds       int
 	HistoryRetentionDays        int
+	DailySummaryRetentionDays   int
 	CandlesCacheTTLSeconds      int
 	StaleAfterSeconds           int
 	UpstreamTimeoutSeconds      float64
@@ -89,6 +90,7 @@ func FromMap(env map[string]string) Settings {
 		LatestCacheTTLSeconds:       intValue(env, "LATEST_CACHE_TTL_SECONDS", 10),
 		LastSuccessTTLSeconds:       intValue(env, "LAST_SUCCESS_TTL_SECONDS", 604800),
 		HistoryRetentionDays:        intValue(env, "HISTORY_RETENTION_DAYS", 2),
+		DailySummaryRetentionDays:   intValue(env, "DAILY_SUMMARY_RETENTION_DAYS", 3650),
 		CandlesCacheTTLSeconds:      intValue(env, "CANDLES_CACHE_TTL_SECONDS", 10),
 		StaleAfterSeconds:           intValue(env, "STALE_AFTER_SECONDS", 180),
 		UpstreamTimeoutSeconds:      floatValue(env, "UPSTREAM_TIMEOUT_SECONDS", 8.0),

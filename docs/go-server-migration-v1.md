@@ -40,6 +40,8 @@ Go API 保留现有路径：
 
 `/candles` 优先读预聚合缓存，缓存缺失时才从历史点兜底重建，避免高并发下每个客户端重复聚合。
 
+历史明细继续按 `HISTORY_RETENTION_DAYS` 短期保留；每日汇总按 `DAILY_SUMMARY_RETENTION_DAYS` 长期保留，作为后续日 K 的 OHLC 数据基础。
+
 `/latest` 优先读 `gold:latest:{symbol}`。如果实时缓存过期但 `gold:last_success:{symbol}` 仍存在，API 返回该兜底数据，并将 `source` 标记为 `cache`、`isStale` 标记为 `true`，避免客户端因短时上游异常直接拿到空数据。`gold:last_success:{symbol}` 默认保留 7 天，且写入时不会短于历史行情保留期。
 
 `gold-worker` 的 Finnhub WebSocket 收到上游 `error` 或等待完整报价快照超时时，会关闭当前连接并重建流连接；连续失败时按 2 秒递增退避，最高 30 秒，避免上游 429 时持续高频重连。

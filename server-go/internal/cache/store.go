@@ -135,11 +135,15 @@ func (s *Store) History(
 }
 
 func (s *Store) DailySummary(ctx context.Context, symbol string, date string) (*model.GoldDailySummary, error) {
-	summary, err := getJSON[model.GoldDailySummary](ctx, s.redis, dailySummaryKey(symbol, date))
+	key := dailySummaryKey(symbol, date)
+	summary, err := getJSON[model.GoldDailySummary](ctx, s.redis, key)
 	if err != nil {
 		return nil, err
 	}
 	if summary != nil {
+		if err := s.redis.Expire(ctx, key, s.dailySummaryRetention()).Err(); err != nil {
+			return nil, err
+		}
 		return summary, nil
 	}
 	return s.buildDailySummaryFromHistory(ctx, symbol, date)
@@ -263,7 +267,7 @@ func (s *Store) upsertDailySummary(ctx context.Context, symbol string, date stri
 			summary.Low = point.Price
 		}
 	}
-	return setJSON(ctx, s.redis, dailySummaryKey(symbol, date), summary, s.historyRetention())
+	return setJSON(ctx, s.redis, dailySummaryKey(symbol, date), summary, s.dailySummaryRetention())
 }
 
 func (s *Store) buildDailySummaryFromHistory(ctx context.Context, symbol string, date string) (*model.GoldDailySummary, error) {
@@ -291,7 +295,7 @@ func (s *Store) buildDailySummaryFromHistory(ctx context.Context, symbol string,
 		OpenTimestampMillis:  points[0].TimestampMillis,
 		CloseTimestampMillis: points[len(points)-1].TimestampMillis,
 	}
-	if err := setJSON(ctx, s.redis, dailySummaryKey(symbol, date), summary, s.historyRetention()); err != nil {
+	if err := setJSON(ctx, s.redis, dailySummaryKey(symbol, date), summary, s.dailySummaryRetention()); err != nil {
 		return nil, err
 	}
 	return &summary, nil
@@ -366,6 +370,14 @@ func candlesKey(symbol string, rangeName string) string {
 
 func (s *Store) historyRetention() time.Duration {
 	days := s.settings.HistoryRetentionDays
+	if days < 1 {
+		days = 1
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
+func (s *Store) dailySummaryRetention() time.Duration {
+	days := s.settings.DailySummaryRetentionDays
 	if days < 1 {
 		days = 1
 	}

@@ -26,6 +26,7 @@ services:
       LATEST_CACHE_TTL_SECONDS: "10"
       CANDLES_CACHE_TTL_SECONDS: "10"
       HISTORY_RETENTION_DAYS: "2"
+      DAILY_SUMMARY_RETENTION_DAYS: "3650"
       TZ: Asia/Shanghai
     networks:
       - gold-prod
@@ -55,6 +56,7 @@ services:
       LATEST_CACHE_TTL_SECONDS: "10"
       CANDLES_CACHE_TTL_SECONDS: "10"
       HISTORY_RETENTION_DAYS: "2"
+      DAILY_SUMMARY_RETENTION_DAYS: "3650"
       TZ: Asia/Shanghai
     networks:
       - gold-prod

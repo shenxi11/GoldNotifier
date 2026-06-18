@@ -17,6 +17,9 @@ func TestFromMapKeepsPythonCompatibleDefaults(t *testing.T) {
 	if settings.LastSuccessTTLSeconds != 604800 {
 		t.Fatalf("LastSuccessTTLSeconds = %d", settings.LastSuccessTTLSeconds)
 	}
+	if settings.DailySummaryRetentionDays != 3650 {
+		t.Fatalf("DailySummaryRetentionDays = %d", settings.DailySummaryRetentionDays)
+	}
 	if settings.DefaultSymbol != "XAU" {
 		t.Fatalf("DefaultSymbol = %s", settings.DefaultSymbol)
 	}
@@ -36,8 +39,9 @@ func TestFromMapBuildsRedisURLFromHostAndPort(t *testing.T) {
 
 func TestInvalidNumbersFallbackToDefaults(t *testing.T) {
 	settings := FromMap(map[string]string{
-		"RATE_LIMIT_PER_MINUTE": "bad",
-		"USD_CNY_FALLBACK_RATE": "bad",
+		"RATE_LIMIT_PER_MINUTE":        "bad",
+		"USD_CNY_FALLBACK_RATE":        "bad",
+		"DAILY_SUMMARY_RETENTION_DAYS": "bad",
 	})
 
 	if settings.RateLimitPerMinute != 120 {
@@ -45,5 +49,18 @@ func TestInvalidNumbersFallbackToDefaults(t *testing.T) {
 	}
 	if settings.USDCNYFallbackRate != 6.7582 {
 		t.Fatalf("USDCNYFallbackRate = %f", settings.USDCNYFallbackRate)
+	}
+	if settings.DailySummaryRetentionDays != 3650 {
+		t.Fatalf("DailySummaryRetentionDays = %d", settings.DailySummaryRetentionDays)
+	}
+}
+
+func TestFromMapReadsDailySummaryRetentionDays(t *testing.T) {
+	settings := FromMap(map[string]string{
+		"DAILY_SUMMARY_RETENTION_DAYS": "730",
+	})
+
+	if settings.DailySummaryRetentionDays != 730 {
+		t.Fatalf("DailySummaryRetentionDays = %d", settings.DailySummaryRetentionDays)
 	}
 }
