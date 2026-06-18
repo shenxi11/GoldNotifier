@@ -19,7 +19,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.goldnotifier.domain.model.GoldTrendPoint
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /*
 模块名: GoldRealtimeTrendChart
@@ -112,14 +116,35 @@ fun GoldRealtimeTrendChart(
             ),
         )
 
-        val path = Path()
-        validPoints.forEachIndexed { index, point ->
-            val x = xOf(point.timestampMillis)
-            val y = yOf(point.price)
-            if (index == 0) {
-                path.moveTo(x, y)
-            } else {
-                path.lineTo(x, y)
+        val chartPoints = validPoints.map { point ->
+            TrendChartPoint(
+                x = xOf(point.timestampMillis),
+                y = yOf(point.price),
+            )
+        }
+        val curveSegments = buildTrendCurveSegments(
+            interpolateTrendChartPoints(
+                points = chartPoints,
+                maxDrawPoints = calculateTrendCurveMaxDrawPoints(chartWidth),
+            ),
+        )
+        val path = Path().apply {
+            curveSegments.firstOrNull()?.let { firstSegment ->
+                moveTo(firstSegment.start.x, firstSegment.start.y)
+            }
+            curveSegments.forEach { segment ->
+                if (segment.isCurved) {
+                    cubicTo(
+                        segment.firstControl.x,
+                        segment.firstControl.y,
+                        segment.secondControl.x,
+                        segment.secondControl.y,
+                        segment.end.x,
+                        segment.end.y,
+                    )
+                } else {
+                    lineTo(segment.end.x, segment.end.y)
+                }
             }
         }
         drawPath(
@@ -146,6 +171,19 @@ internal data class TrendPriceAxisLabel(
     val text: String,
 )
 
+internal data class TrendChartPoint(
+    val x: Float,
+    val y: Float,
+)
+
+internal data class TrendCurveSegment(
+    val start: TrendChartPoint,
+    val firstControl: TrendChartPoint,
+    val secondControl: TrendChartPoint,
+    val end: TrendChartPoint,
+    val isCurved: Boolean,
+)
+
 internal fun calculateTrendPriceAxisLabels(
     points: List<GoldTrendPoint>,
     labelCount: Int = GRID_LINE_COUNT,
@@ -166,4 +204,185 @@ internal fun calculateTrendPriceAxisLabels(
     }
 }
 
+internal fun calculateTrendCurveMaxDrawPoints(chartWidth: Float): Int {
+    if (!chartWidth.isFinite() || chartWidth <= 0f) return MIN_TREND_DRAW_POINTS
+    return (chartWidth / TREND_POINT_PIXEL_STEP)
+        .roundToInt()
+        .coerceIn(MIN_TREND_DRAW_POINTS, MAX_TREND_DRAW_POINTS)
+}
+
+internal fun interpolateTrendChartPoints(
+    points: List<TrendChartPoint>,
+    maxDrawPoints: Int,
+): List<TrendChartPoint> {
+    if (maxDrawPoints < 2) return emptyList()
+    val normalizedPoints = normalizeTrendChartPoints(points)
+    if (normalizedPoints.size <= maxDrawPoints) return normalizedPoints
+
+    val criticalPoints = buildCriticalTrendChartPoints(
+        points = normalizedPoints,
+        maxPointCount = maxDrawPoints,
+    )
+    val interpolationSlots = (maxDrawPoints - criticalPoints.size).coerceAtLeast(0)
+    val interpolatedPoints = if (interpolationSlots == 0) {
+        emptyList()
+    } else {
+        val firstX = normalizedPoints.first().x
+        val lastX = normalizedPoints.last().x
+        val width = (lastX - firstX).coerceAtLeast(CHART_POINT_EPSILON)
+        (1..interpolationSlots).map { index ->
+            val x = firstX + width * index / (interpolationSlots + 1)
+            TrendChartPoint(
+                x = x,
+                y = interpolateTrendYAtX(normalizedPoints, x),
+            )
+        }
+    }
+
+    return normalizeTrendChartPoints(interpolatedPoints + criticalPoints)
+}
+
+internal fun buildTrendCurveSegments(points: List<TrendChartPoint>): List<TrendCurveSegment> {
+    val normalizedPoints = normalizeTrendChartPoints(points)
+    if (normalizedPoints.size < 2) return emptyList()
+    if (normalizedPoints.size < 3) return normalizedPoints.lineSegments()
+
+    val slopes = calculateMonotoneSlopes(normalizedPoints)
+    return (0 until normalizedPoints.lastIndex).map { index ->
+        val start = normalizedPoints[index]
+        val end = normalizedPoints[index + 1]
+        val dx = end.x - start.x
+        if (dx <= CHART_POINT_EPSILON) {
+            return@map start.lineSegmentTo(end)
+        }
+        val minY = min(start.y, end.y)
+        val maxY = max(start.y, end.y)
+        val firstControl = TrendChartPoint(
+            x = start.x + dx / 3f,
+            y = (start.y + slopes[index] * dx / 3f).coerceIn(minY, maxY),
+        )
+        val secondControl = TrendChartPoint(
+            x = end.x - dx / 3f,
+            y = (end.y - slopes[index + 1] * dx / 3f).coerceIn(minY, maxY),
+        )
+        TrendCurveSegment(
+            start = start,
+            firstControl = firstControl,
+            secondControl = secondControl,
+            end = end,
+            isCurved = true,
+        )
+    }
+}
+
+private fun normalizeTrendChartPoints(points: List<TrendChartPoint>): List<TrendChartPoint> =
+    points
+        .filter { point -> point.x.isFinite() && point.y.isFinite() }
+        .sortedBy { point -> point.x }
+        .fold(mutableListOf<TrendChartPoint>()) { result, point ->
+            if (result.isNotEmpty() && abs(result.last().x - point.x) <= CHART_POINT_EPSILON) {
+                result[result.lastIndex] = point
+            } else {
+                result += point
+            }
+            result
+        }
+
+private fun buildCriticalTrendChartPoints(
+    points: List<TrendChartPoint>,
+    maxPointCount: Int,
+): List<TrendChartPoint> {
+    val candidates = listOfNotNull(
+        points.firstOrNull(),
+        points.lastOrNull(),
+        points.minByOrNull { point -> point.y },
+        points.maxByOrNull { point -> point.y },
+    )
+    return candidates.fold(mutableListOf<TrendChartPoint>()) { result, point ->
+        if (
+            result.size < maxPointCount &&
+            result.none { existing -> abs(existing.x - point.x) <= CHART_POINT_EPSILON }
+        ) {
+            result += point
+        }
+        result
+    }
+}
+
+private fun interpolateTrendYAtX(
+    points: List<TrendChartPoint>,
+    x: Float,
+): Float {
+    if (x <= points.first().x + CHART_POINT_EPSILON) return points.first().y
+    if (x >= points.last().x - CHART_POINT_EPSILON) return points.last().y
+
+    for (index in 0 until points.lastIndex) {
+        val start = points[index]
+        val end = points[index + 1]
+        if (x > end.x) continue
+
+        val dx = end.x - start.x
+        if (dx <= CHART_POINT_EPSILON) return end.y
+        val progress = ((x - start.x) / dx).coerceIn(0f, 1f)
+        return start.y + (end.y - start.y) * progress
+    }
+    return points.last().y
+}
+
+private fun calculateMonotoneSlopes(points: List<TrendChartPoint>): FloatArray {
+    val deltas = FloatArray(points.lastIndex)
+    for (index in 0 until points.lastIndex) {
+        val dx = points[index + 1].x - points[index].x
+        deltas[index] = if (dx <= CHART_POINT_EPSILON) {
+            0f
+        } else {
+            (points[index + 1].y - points[index].y) / dx
+        }
+    }
+
+    val slopes = FloatArray(points.size)
+    slopes[0] = deltas.first()
+    slopes[slopes.lastIndex] = deltas.last()
+    for (index in 1 until slopes.lastIndex) {
+        val previous = deltas[index - 1]
+        val next = deltas[index]
+        slopes[index] = if (previous * next <= 0f) 0f else (previous + next) / 2f
+    }
+
+    for (index in deltas.indices) {
+        val delta = deltas[index]
+        if (abs(delta) <= CHART_POINT_EPSILON) {
+            slopes[index] = 0f
+            slopes[index + 1] = 0f
+            continue
+        }
+        val firstRatio = slopes[index] / delta
+        val secondRatio = slopes[index + 1] / delta
+        val magnitude = sqrt(firstRatio * firstRatio + secondRatio * secondRatio)
+        if (magnitude > MONOTONE_SLOPE_LIMIT) {
+            val scale = MONOTONE_SLOPE_LIMIT / magnitude
+            slopes[index] = scale * firstRatio * delta
+            slopes[index + 1] = scale * secondRatio * delta
+        }
+    }
+    return slopes
+}
+
+private fun List<TrendChartPoint>.lineSegments(): List<TrendCurveSegment> =
+    zipWithNext { start, end -> start.lineSegmentTo(end) }
+
+private fun TrendChartPoint.lineSegmentTo(end: TrendChartPoint): TrendCurveSegment =
+    TrendCurveSegment(
+        start = this,
+        firstControl = this,
+        secondControl = end,
+        end = end,
+        isCurved = false,
+    )
+
 private const val GRID_LINE_COUNT = 4
+private const val CHART_POINT_EPSILON = 0.001f
+private const val TREND_POINT_PIXEL_STEP = 4f
+private const val MIN_TREND_DRAW_POINTS = 80
+private const val MAX_TREND_DRAW_POINTS = 240
+private const val MONOTONE_SLOPE_LIMIT = 3f

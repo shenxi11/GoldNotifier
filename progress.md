@@ -460,3 +460,46 @@
 - `progress.md`：追加本次线上部署记录。
 - GitHub 推送状态：本地提交已完成，但当前本机访问 `github.com:443` 超时，`git push origin main` 暂未成功；服务器已通过 bundle 部署到 `f7a9cc2`。
 - 回滚方式：服务器执行 `cd /opt/gold-notifier/app/server-go && GOLD_DOCKER_NETWORK=server_default GOLD_ENV_FILE=/opt/gold-notifier/server/.env docker compose -f docker-compose.prod.yml down && docker start gold-api` 可恢复旧 Python API；若只回滚本次 Go 代码，可在服务器仓库回退到上一个 Go 服务端提交后重新构建并 `docker compose -f docker-compose.prod.yml up -d`。
+
+## 2026-06-18 - Task: 美化实时趋势图平滑曲线
+
+### What was done
+- 将首页默认折线趋势图从逐点直线连接改为单调三次曲线连接，提升曲线连贯性。
+- 曲线仍经过每一个真实行情点，仅改变 Canvas 视觉路径，不修改价格点、刻度、涨跌摘要或接口数据。
+- 对曲线控制点增加相邻点范围约束，避免拟合曲线突破真实点形成视觉过冲。
+- 补充曲线段算法测试，覆盖真实点穿越、控制点不越界、两点回退直线和重复横坐标处理。
+- 更新实时趋势图文档，说明平滑曲线的边界和验证口径。
+
+### Testing
+- `.\gradlew.bat testDebugUnitTest`：通过。
+- `.\gradlew.bat assembleDebug`：通过。
+- UTF-8 解码检查：`GoldRealtimeTrendChart.kt`、`GoldRealtimeTrendChartTest.kt`、`gold-realtime-trend-v1.1.md` 通过。
+
+### Notes
+- `app/src/main/java/com/example/goldnotifier/ui/component/GoldRealtimeTrendChart.kt`：新增单调三次曲线段计算并用 `Path.cubicTo` 绘制平滑趋势曲线。
+- `app/src/test/java/com/example/goldnotifier/ui/component/GoldRealtimeTrendChartTest.kt`：新增平滑曲线算法回归测试。
+- `docs/gold-realtime-trend-v1.1.md`：补充趋势曲线平滑行为说明。
+- `progress.md`：追加本次趋势图曲线美化记录。
+- 回滚方式：恢复上述 4 个文件到本轮修改前；如已提交，执行 `git revert <本次提交>`。
+
+## 2026-06-18 - Task: 应用插值法优化高密度趋势曲线
+
+### What was done
+- 在首页实时趋势图绘制层新增按像素宽度计算的最大绘制点数，避免高密度点列全部参与曲线路径。
+- 对点数过多的趋势坐标做等距线性插值重采样，并保留首尾、最新、最高和最低关键点，降低细碎抖动同时保留关键行情。
+- 复用现有单调三次曲线绘制重采样后的显示点，不改变行情数据、价格刻度、涨跌摘要或服务端接口语义。
+- 补充插值重采样测试，覆盖宽度上限、关键点保留、线性插值结果、坐标有序性和曲线段兼容性。
+- 更新实时趋势图文档，说明高密度曲线的显示层插值边界。
+
+### Testing
+- `.\gradlew.bat testDebugUnitTest`：通过。
+- `.\gradlew.bat assembleDebug`：通过。
+- `git diff --check`：通过，仅提示当前工作区文件后续可能按 Git 配置从 LF 转为 CRLF。
+- UTF-8 解码检查：`GoldRealtimeTrendChart.kt`、`GoldRealtimeTrendChartTest.kt`、`gold-realtime-trend-v1.1.md` 通过。
+
+### Notes
+- `app/src/main/java/com/example/goldnotifier/ui/component/GoldRealtimeTrendChart.kt`：新增显示点插值重采样、关键点保留和像素宽度绘制点数上限计算。
+- `app/src/test/java/com/example/goldnotifier/ui/component/GoldRealtimeTrendChartTest.kt`：新增插值重采样和宽度上限回归测试。
+- `docs/gold-realtime-trend-v1.1.md`：更新趋势曲线从全点穿越到高密度插值重采样的行为说明。
+- `progress.md`：追加本次插值法优化记录。
+- 回滚方式：恢复上述 4 个文件到本轮修改前；如已提交，执行 `git revert <本次提交>`。

@@ -12,6 +12,7 @@
 - 趋势点追加节奏与现有刷新频率保持一致，默认最小追加间隔为 2.5 秒，用于容忍协程调度抖动。
 - 趋势快照按低频策略写入 DataStore，用于短时间内回到 App 时恢复图表状态。
 - 首页改为纵向滚动布局，保证新增趋势卡片后小屏设备仍可访问刷新和权限控制区。
+- 折线趋势图使用单调三次曲线绘制；点数较少时直接连接真实行情点，点数过多时按图表像素宽度做显示用插值重采样，并保留首尾、最新、最高和最低点。
 
 ## 数据流
 
@@ -19,16 +20,18 @@
 2. `HomeViewModel.refreshOnce()` 根据刷新结果调用 `TrendPointBuffer.appendIfValid()`。
 3. `TrendPointBuffer` 在内存中维护最近 5 分钟趋势点，并过滤缓存、延迟和非法价格。
 4. `HomeUiState.trendPoints` 驱动 Compose 首页趋势卡片。
-5. `GoldRealtimeTrendChart` 使用 Compose Canvas 绘制网格、基准线和折线。
+5. `GoldRealtimeTrendChart` 使用 Compose Canvas 绘制网格、基准线和平滑趋势曲线；高密度点列会先在图表层做等距插值重采样。
 6. `UserSettingsDataStore.cacheTrendSnapshot()` 低频保存趋势快照，App 停止时触发一次强制保存。
 
 ## 当前边界
 
 - 该趋势图不是历史 K 线，不保证覆盖 App 未运行期间的价格变化。
 - DataStore 仅保存短期快照，不作为高频历史行情存储。
+- 插值重采样仅作用于 Canvas 视觉路径，不改变 `GoldTrendPoint`、价格刻度、涨跌摘要或服务端返回数据。
 - 服务端仓库无需改动；如果后续要做跨设备、长周期历史趋势，再评估服务端历史接口和持久化方案。
 
 ## 验证
 
 - 已执行 `..\gradlew.bat testDebugUnitTest`。
 - 新增 `TrendPointBufferTest` 覆盖有效追加、缓存/延迟过滤、非法价格过滤、追加间隔、窗口裁剪和快照恢复排序过滤。
+- 新增 `GoldRealtimeTrendChartTest` 覆盖显示点插值重采样、关键点保留、线性插值结果、平滑曲线段控制点不越界、两点回退直线和重复横坐标处理。
