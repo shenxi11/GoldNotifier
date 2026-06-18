@@ -531,3 +531,26 @@
 - `docs/go-server-migration-v1.md`：补充 Go 服务 Redis 数据保留策略。
 - `progress.md`：追加本次每日收盘价长期存储记录。
 - 回滚方式：恢复上述 9 个文件到本轮修改前；如已提交，执行 `git revert <本次提交>`。
+
+## 2026-06-18 - Task: 部署每日收盘价长期存储
+
+### What was done
+- 将本地提交 `9415894` 通过 git bundle 同步到服务器 `/opt/gold-notifier/app`，服务器仓库从 `f7a9cc2` 快进到 `9415894`。
+- 在服务器重新构建 `gold-api-go` 和 `gold-worker-go` 镜像，并重建两个 Go 容器。
+- 线上 API/Worker 环境变量已包含 `DAILY_SUMMARY_RETENTION_DAYS=3650`，历史明细仍保持 `HISTORY_RETENTION_DAYS=2`。
+- 验证 Redis 中 `gold:daily_summary:XAU:2026-06-18` 和 `gold:daily_summary:XAU:2026-06-17` 的 TTL 均为 `315360000` 秒，即 3650 天。
+
+### Testing
+- 本地 `server-go` 执行 `go test ./...`：通过。
+- 本地 `git diff --check`：通过，仅提示当前工作区文件后续可能按 Git 配置从 LF 转为 CRLF。
+- 服务器执行 `git bundle verify /tmp/goldnotifier-main-9415894.bundle`：通过。
+- 服务器执行 `docker compose -f docker-compose.prod.yml config`：通过。
+- 服务器执行 `docker compose -f docker-compose.prod.yml build`：通过。
+- 服务器执行 `docker compose -f docker-compose.prod.yml up -d`：通过。
+- 服务器本机 `curl http://127.0.0.1:9987/api/v1/health`：返回 `ok=true`。
+- 服务器本机 `curl http://127.0.0.1:9987/api/v1/gold/latest?symbol=XAU`：返回 `code=0`。
+
+### Notes
+- `progress.md`：追加本次线上部署记录。
+- 线上运行容器：`gold-api-go`、`gold-worker-go` 均已重建并启动。
+- 回滚方式：服务器执行 `cd /opt/gold-notifier/app && git revert 9415894` 后在 `server-go` 目录重新执行 `GOLD_DOCKER_NETWORK=server_default GOLD_ENV_FILE=/opt/gold-notifier/server/.env docker compose -f docker-compose.prod.yml build && GOLD_DOCKER_NETWORK=server_default GOLD_ENV_FILE=/opt/gold-notifier/server/.env docker compose -f docker-compose.prod.yml up -d`；如仅回滚配置，可将 `DAILY_SUMMARY_RETENTION_DAYS` 从 compose 环境变量中移除并重建容器。
